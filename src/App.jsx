@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 
 // --- 🔐 SECURITY SETTINGS ---
-const APP_PASSWORD = "elgreco!2026@"; // <--- PASSWORD UPDATED
+const APP_PASSWORD = "elgreco!2026@"; 
 
 // --- 1. UTILITY: EXPORT FUNCTION ---
 const exportData = (data, filename, format = 'xlsx') => {
@@ -213,7 +213,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
                     <p className="font-bold text-gray-800">{item.fabricCode || item.description}</p>
                     {(item.subCode || item.rollId) && (
                       <p className="text-xs text-gray-500">
-                        {item.subCode ? `Sub: ${item.subCode}` : ''} {item.rollId ? `(Roll #${item.rollId})` : ''}
+                        {item.subCode ? `Sub: ${item.subCode}` : ''} {item.rollId ? `(Roll #${item.rollId})` : ''} {item.description ? `- ${item.description}` : ''}
                       </p>
                     )}
                   </td>
@@ -238,7 +238,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
   );
 };
 
-// --- TABS (CONNECTED TO FIREBASE) ---
+// --- TABS ---
 
 const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, dateRangeStart, dateRangeEnd, setActiveTab }) => {
   const totalFabrics = fabrics.length;
@@ -251,40 +251,41 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   const filteredOrders = orders.filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
   const filteredExpenses = expenses.filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
-  const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + p.subtotal, 0);
-  const netExpenses = filteredExpenses.reduce((s, e) => s + e.netPrice, 0);
+  const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
+  const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.netPrice) || 0), 0);
   const totalNetPurchases = netPurchasesFromFabrics + netExpenses; 
 
-  const vatPaid = filteredPurchases.reduce((s, p) => s + p.vatAmount, 0) + filteredExpenses.reduce((s, e) => s + e.vatAmount, 0);
-  const totalCashOut = filteredPurchases.reduce((s, p) => s + p.finalPrice, 0) + filteredExpenses.reduce((s, e) => s + e.finalPrice, 0);
+  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
+  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice) || 0), 0);
   
-  const totalRevenue = filteredOrders.reduce((s, o) => s + o.subtotal, 0);
-  const totalVATCollected = filteredOrders.reduce((s, o) => s + o.vatAmount, 0);
+  const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
+  const totalVATCollected = filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0);
   
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
-  // --- FIXED EXPORT FUNCTION WITH DETAILED PURCHASES ---
+  // --- FIXED EXPORT FUNCTION WITH DETAILED PURCHASES & INVENTORY DESCRIPTION ---
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
       
-      // Inventory
-      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Meters: r.meters }))) : [];
+      // Inventory (With Description)
+      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price }))) : [];
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
       // Sales
       const salesData = orders.map(o => ({ Invoice: o.invoiceNo, Customer: o.customer, Date: o.date, Total: o.finalPrice, Status: o.status }));
       if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
       
-      // Purchases (Detailed Item Level as requested)
+      // Purchases (Detailed with Subcode etc.)
       const purchaseData = purchases.flatMap(p => 
         p.items.map(item => {
-            const net = item.totalPrice;
-            const vat = net * (p.vatRate / 100);
+            const net = parseFloat(item.totalPrice) || 0;
+            const vat = net * (parseFloat(p.vatRate) / 100);
             return {
                 Date: p.date,
                 SupplierName: p.supplier,
                 SubCode: item.subCode,
+                Description: item.description || '', // Added Description
                 Quantity: item.meters,
                 NetPrice: net,
                 VAT: vat,
@@ -370,9 +371,9 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '' });
-  const [addRollOpen, setAddRollOpen] = useState(null); // Used for both Add and Edit modal
-  const [editRollMode, setEditRollMode] = useState(false); // Flag for Edit vs Add
-  const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', meters: '', location: '', price: '' });
+  const [addRollOpen, setAddRollOpen] = useState(null); 
+  const [editRollMode, setEditRollMode] = useState(false);
+  const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '' });
 
   const filtered = fabrics.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()) || f.mainCode.includes(searchTerm));
 
@@ -388,37 +389,32 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
     if(confirm("Delete this fabric?")) await deleteDoc(doc(db, "fabrics", id));
   };
 
-  // OPEN ADD ROLL MODAL
   const openAddRoll = (fabricId) => {
       setAddRollOpen(fabricId);
       setEditRollMode(false);
-      setCurrentRoll({ rollId: Date.now(), subCode: '', meters: '', location: '', price: '' });
+      setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', meters: '', location: '', price: '' });
   }
 
-  // OPEN EDIT ROLL MODAL
   const openEditRoll = (fabricId, roll) => {
       setAddRollOpen(fabricId);
       setEditRollMode(true);
       setCurrentRoll(roll);
   }
 
-  // SAVE ROLL (ADD OR UPDATE)
   const handleSaveRoll = async (fabricId) => {
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
       let updatedRolls = fabric.rolls || [];
 
       if(editRollMode) {
-          // Update existing roll
           updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r);
       } else {
-          // Add new roll
           updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }];
       }
       
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
-      setCurrentRoll({ rollId: '', subCode: '', meters: '', location: '', price: '' });
+      setCurrentRoll({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '' });
     }
   };
 
@@ -490,12 +486,12 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                     )) : <p className="text-sm text-gray-400 italic">No rolls available.</p>}
                  </div>
                  
-                 {/* --- FIXED TABLE HEADERS (Added Roll ID) --- */}
                  <table className="w-full text-sm">
                     <thead>
                       <tr className="text-gray-900 border-b bg-white">
-                         <th className="text-left py-2 font-bold">Roll ID</th> {/* NEW HEADER */}
+                         <th className="text-left py-2 font-bold">Roll ID</th> 
                          <th className="text-left py-2 font-bold">Sub Code</th>
+                         <th className="text-left py-2 font-bold">Description</th> {/* NEW HEADER */}
                          <th className="text-left py-2 font-bold">Meters</th>
                          <th className="text-left py-2 font-bold">Location</th>
                          <th className="text-right py-2 font-bold">Actions</th>
@@ -504,12 +500,13 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                     <tbody>
                       {rolls.map(roll => (
                           <tr key={roll.rollId} className="border-b last:border-0 hover:bg-gray-50">
-                             <td className="py-3 text-gray-500 font-mono text-xs">#{roll.rollId}</td> {/* NEW CELL */}
+                             <td className="py-3 text-gray-500 font-mono text-xs">#{roll.rollId}</td>
                              <td className="py-3">{roll.subCode}</td>
+                             <td className="py-3 text-gray-600 italic">{roll.description || '-'}</td> {/* NEW CELL */}
                              <td className="py-3 font-bold">{roll.meters}m</td>
                              <td className="py-3">{roll.location}</td>
                              <td className="py-3 text-right flex justify-end gap-2">
-                                <button onClick={() => openEditRoll(fabric.id, roll)} className="text-blue-500 hover:text-blue-700"><Pencil size={16}/></button> {/* EDIT BUTTON */}
+                                <button onClick={() => openEditRoll(fabric.id, roll)} className="text-blue-500 hover:text-blue-700"><Pencil size={16}/></button>
                                 <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
                              </td>
                           </tr>
@@ -519,8 +516,9 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                  {addRollOpen === fabric.id && (
                    <div className="mt-4 bg-blue-50 p-4 rounded border border-blue-200">
                       <h4 className="font-bold text-sm mb-2 text-gray-700">{editRollMode ? 'Edit Roll' : 'Add New Physical Roll'}</h4>
-                      <div className="grid grid-cols-4 gap-2 mb-2">
+                      <div className="grid grid-cols-5 gap-2 mb-2">
                          <div><input className="w-full border p-2 rounded bg-white" value={currentRoll.subCode} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} placeholder="Sub Code" /></div>
+                         <div className="col-span-1"><input className="w-full border p-2 rounded bg-white" value={currentRoll.description} onChange={e => setCurrentRoll({...currentRoll, description: e.target.value})} placeholder="Description (Optional)" /></div> {/* NEW INPUT */}
                          <div><input type="number" className="w-full border p-2 rounded bg-white" value={currentRoll.meters} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} placeholder="Meters" /></div>
                          <div><input className="w-full border p-2 rounded bg-white" value={currentRoll.location} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} placeholder="Location" /></div>
                          <div><input type="number" className="w-full border p-2 rounded bg-white" value={currentRoll.price} onChange={e => setCurrentRoll({...currentRoll, price: e.target.value})} placeholder="Price (Optional)" /></div>
@@ -540,213 +538,79 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
   );
 };
 
-const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [viewInvoice, setViewInvoice] = useState(null);
-  const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] });
-  const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
-  const selectedFabric = fabrics.find(f => f.mainCode === item.fabricCode);
-
-  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
-
-  const addItem = () => {
-    if (item.rollId && item.meters && item.pricePerMeter) {
-      const roll = selectedFabric.rolls.find(r => r.rollId === parseInt(item.rollId));
-      if (!roll) return;
-      const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter);
-      setNewOrder({ ...newOrder, items: [...newOrder.items, { ...item, subCode: roll.subCode, totalPrice: total }] });
-      setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
-    }
-  };
-
-  const deductStock = async (orderItems) => {
-    for (const orderItem of orderItems) {
-        const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode);
-        if(fabric) {
-            const updatedRolls = fabric.rolls.map(r => {
-                if(r.rollId === parseInt(orderItem.rollId)) {
-                    return { ...r, meters: Math.max(0, parseFloat(r.meters) - parseFloat(orderItem.meters)) };
-                }
-                return r;
-            });
-            await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls });
-        }
-    }
-  };
-
-  const saveOrder = async () => {
-    const subtotal = newOrder.items.reduce((s, i) => s + i.totalPrice, 0);
-    const vat = subtotal * (newOrder.vatRate / 100);
-    const final = subtotal + vat;
-    const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final };
-
-    if (editingId) {
-       await updateDoc(doc(db, "orders", editingId), orderToSave);
-    } else {
-       if (newOrder.status === 'Completed') await deductStock(newOrder.items);
-       await addDoc(collection(db, "orders"), orderToSave);
-    }
-    setShowAdd(false);
-    setEditingId(null);
-    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] });
-  };
-
-  const updateStatus = async (id, newStatus) => {
-    const order = orders.find(o => o.id === id);
-    if (order.status !== 'Completed' && newStatus === 'Completed') await deductStock(order.items);
-    await updateDoc(doc(db, "orders", id), { status: newStatus });
-  };
-
-  const deleteOrder = async (id) => {
-      if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id));
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <button onClick={onBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-2"><ArrowLeft size={16} /> Back to Dashboard</button>
-          <h2 className="text-2xl font-bold text-gray-900">Sales Invoices</h2>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowAdd(true)} className="bg-orange-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-orange-700 font-bold"><Plus size={16} /> NEW SALES INVOICE</button>
-        </div>
-      </div>
-
-      {showAdd && (
-        <div className="bg-white border border-green-500 rounded-lg p-6 mb-6 shadow-lg">
-          <h3 className="font-bold text-lg mb-4 text-gray-800">{editingId ? 'Edit Sales Invoice' : 'Create Sales Invoice'}</h3>
-          <div className="grid grid-cols-5 gap-4 mb-6">
-            <div><label className="text-sm font-semibold text-gray-700 block mb-1">Customer</label>
-              <select className="w-full border p-2 rounded" value={newOrder.customer} onChange={e => setNewOrder({ ...newOrder, customer: e.target.value })}>
-                <option>Select</option>
-                {customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select></div>
-            <div><label className="text-sm font-semibold text-gray-700 block mb-1">Invoice No</label><input className="w-full border p-2 rounded" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
-            <div><label className="text-sm font-semibold text-gray-700 block mb-1">Date</label><input type="date" className="w-full border p-2 rounded" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
-            <div><label className="text-sm font-semibold text-gray-700 block mb-1">VAT %</label><input type="number" className="w-full border p-2 rounded" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
-            <div><label className="text-sm font-semibold text-gray-700 block mb-1">Status</label>
-              <select className="w-full border p-2 rounded" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}>
-                <option value="Pending">Pending</option>
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
-              </select></div>
-          </div>
-          <div className="mb-6">
-            <h4 className="font-bold text-sm mb-2 text-gray-700">Add Items</h4>
-            <div className="flex gap-2 mb-3">
-              <select className="border p-2 rounded flex-1 bg-gray-50" value={item.fabricCode} onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })}>
-                <option value="">Select Fabric</option>
-                {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode} - {f.name}</option>)}
-              </select>
-              <select className="border p-2 rounded flex-1 bg-gray-50" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}>
-                <option value="">Select Roll</option>
-                {selectedFabric?.rolls.map(r => <option key={r.rollId} value={r.rollId}>#{r.rollId} - {r.subCode} ({r.meters}m)</option>)}
-              </select>
-              <input type="number" placeholder="Meters" className="border p-2 rounded w-32 bg-gray-50" value={item.meters} onChange={e => setItem({ ...item, meters: e.target.value })} />
-              <input type="number" placeholder="Price/M" className="border p-2 rounded w-32 bg-gray-50" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} />
-              <button onClick={addItem} className="bg-green-600 text-white px-6 rounded font-bold hover:bg-green-700">Add Item</button>
-            </div>
-            {newOrder.items.length > 0 && (
-              <div className="bg-white border rounded p-0 overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100"><tr><th className="text-left p-2">Item</th><th className="text-right p-2">Details</th><th className="text-right p-2">Total</th><th className="text-right p-2">Action</th></tr></thead>
-                  <tbody>
-                    {newOrder.items.map((i, idx) => (
-                      <tr key={idx} className="border-b last:border-0">
-                        <td className="p-2">{i.fabricCode} (Roll #{i.rollId})</td>
-                        <td className="p-2 text-right">{i.meters}m x €{i.pricePerMeter}</td>
-                        <td className="p-2 text-right font-bold">€{i.totalPrice.toFixed(2)}</td>
-                        <td className="p-2 text-right"><button onClick={() => setNewOrder({...newOrder, items: newOrder.items.filter((_, x) => x !== idx)})} className="text-red-500"><Trash2 size={14}/></button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={saveOrder} className="bg-gray-400 text-white px-4 py-2 rounded font-bold hover:bg-gray-500">{editingId ? 'Update Invoice' : 'Save Invoice'}</button>
-            <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancel</button>
-          </div>
-        </div>
-      )}
-      <div className="bg-white border rounded-lg shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b font-bold text-gray-900">
-            <tr><th className="text-left p-4">Invoice No</th><th className="text-left p-4">Customer</th><th className="text-left p-4">Date</th><th className="text-right p-4">Final Price</th><th className="text-center p-4">Status</th><th className="text-right p-4">Actions</th></tr>
-          </thead>
-          <tbody>
-            {orders.filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd).map(order => (
-              <tr key={order.id} className="border-t hover:bg-gray-50">
-                <td className="p-4">{order.invoiceNo}</td>
-                <td className="p-4 font-medium">{order.customer}</td>
-                <td className="p-4">{order.date}</td>
-                <td className="p-4 text-right font-bold">€{order.finalPrice.toFixed(2)}</td>
-                <td className="p-4 text-center">
-                  <select value={order.status} onChange={(e) => updateStatus(order.id, e.target.value)} className={`px-3 py-1 rounded-full text-xs font-bold border-none cursor-pointer ${order.status === 'Completed' ? 'bg-green-100 text-green-800' : order.status === 'Cancelled' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                    <option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option>
-                  </select>
-                </td>
-                <td className="p-4 text-right flex justify-end gap-2">
-                  <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View Invoice"><Eye size={18} /></button>
-                  <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-blue-500 hover:text-blue-700"><Pencil size={18} /></button>
-                  <button onClick={() => deleteOrder(order.id)} className="text-red-500 hover:text-red-700"><Trash2 size={18} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
    const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
-   const [item, setItem] = useState({ fabricCode: '', subCode: '', meters: '', pricePerMeter: '' });
+   const [item, setItem] = useState({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' });
 
    if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
    const addItem = () => {
       if(item.fabricCode && item.meters && item.pricePerMeter) {
          const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter);
          setNewPurchase({...newPurchase, items: [...newPurchase.items, { ...item, totalPrice: total }] });
-         setItem({ fabricCode: '', subCode: '', meters: '', pricePerMeter: '' });
+         setItem({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' });
       }
    };
 
-   // --- FIXED SAVE PURCHASE WITH INVENTORY UPDATE ---
+   // --- CORRECTED SAVE & UPDATE INVENTORY LOGIC ---
    const savePurchase = async () => {
-      const subtotal = newPurchase.items.reduce((s, i) => s + i.totalPrice, 0);
-      const vat = subtotal * (newPurchase.vatRate / 100);
+      // 1. Calculate Totals (Safely converting to numbers)
+      const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
+      const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
       const final = subtotal + vat;
-      const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final };
-      
+      const purchaseData = { 
+          ...newPurchase, 
+          subtotal, 
+          vatAmount: vat, 
+          finalPrice: final,
+          items: newPurchase.items.map(i => ({
+              ...i,
+              meters: parseFloat(i.meters),
+              pricePerMeter: parseFloat(i.pricePerMeter),
+              totalPrice: parseFloat(i.totalPrice)
+          }))
+      };
+
       if(editingId) {
-         // Update Invoice only (Inventory adjustment on edit is complex, handled manually for now)
+         // Update Invoice Only
          await updateDoc(doc(db, "purchases", editingId), purchaseData);
       } else {
-         // Create Invoice & ADD STOCK
+         // 2. Create Invoice
          await addDoc(collection(db, "purchases"), purchaseData);
          
-         // Loop through items and create new rolls in inventory
-         for (const purchasedItem of newPurchase.items) {
+         // 3. GROUP ROLLS BY FABRIC (Prevents race conditions)
+         const rollsByFabric = {};
+
+         newPurchase.items.forEach(purchasedItem => {
              const fabric = fabrics.find(f => f.mainCode === purchasedItem.fabricCode);
              if (fabric) {
                  const newRoll = {
-                     rollId: Date.now() + Math.random(), // Unique ID
+                     rollId: Date.now() + Math.random(), 
                      subCode: purchasedItem.subCode || 'NEW',
-                     meters: purchasedItem.meters,
+                     description: purchasedItem.description || '', // Carry description to inventory
+                     meters: parseFloat(purchasedItem.meters) || 0,
                      location: 'Warehouse',
-                     price: purchasedItem.pricePerMeter,
+                     price: parseFloat(purchasedItem.pricePerMeter) || 0,
                      dateAdded: new Date().toISOString().split('T')[0]
                  };
+                 
+                 if (!rollsByFabric[fabric.id]) {
+                     rollsByFabric[fabric.id] = [];
+                 }
+                 rollsByFabric[fabric.id].push(newRoll);
+             }
+         });
+
+         // 4. EXECUTE UPDATES
+         for (const [fabricId, newRolls] of Object.entries(rollsByFabric)) {
+             const fabric = fabrics.find(f => f.id === fabricId);
+             if (fabric) {
                  const currentRolls = fabric.rolls || [];
-                 await updateDoc(doc(db, "fabrics", fabric.id), { rolls: [...currentRolls, newRoll] });
+                 await updateDoc(doc(db, "fabrics", fabricId), { 
+                     rolls: [...currentRolls, ...newRolls] 
+                 });
              }
          }
       }
@@ -791,13 +655,14 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                         {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode}</option>)}
                      </select>
                      <input className="border p-2 rounded flex-1" placeholder="Sub Code" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
+                     <input className="border p-2 rounded flex-1" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> {/* NEW INPUT */}
                      <input type="number" className="border p-2 rounded flex-1" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
                      <input type="number" className="border p-2 rounded flex-1" placeholder="Price/M" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
                      <button onClick={addItem} className="bg-green-600 text-white px-6 rounded font-bold">Add</button>
                   </div>
                   {newPurchase.items.map((i, idx) => (
                      <div key={idx} className="flex justify-between text-sm py-1 border-b">
-                        <span>{i.fabricCode} {i.subCode}</span>
+                        <span>{i.fabricCode} {i.subCode} ({i.description})</span>
                         <span>{i.meters}m x €{i.pricePerMeter} = €{i.totalPrice.toFixed(2)}</span>
                         <button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-500 ml-2"><Trash2 size={14}/></button>
                      </div>
@@ -838,6 +703,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
    )
 };
 
+// ... (Rest of code remains the same: Expenses, ContactList, FabricERP)
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
