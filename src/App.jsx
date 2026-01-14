@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 
 // --- 🔐 SECURITY SETTINGS ---
-const APP_PASSWORD = "elgrecotex!2026@"; // <--- CHANGE THIS PASSWORD HERE
+const APP_PASSWORD = "admin123"; // <--- CHANGE THIS PASSWORD HERE
 
 // --- 1. UTILITY: EXPORT FUNCTION ---
 const exportData = (data, filename, format = 'xlsx') => {
@@ -251,17 +251,64 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   const filteredOrders = orders.filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
   const filteredExpenses = expenses.filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
-  const netPurchases = filteredPurchases.reduce((s, p) => s + p.subtotal, 0);
+  // --- FIXED CALCULATIONS HERE ---
+  const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + p.subtotal, 0); // Fabric buys
+  const netExpenses = filteredExpenses.reduce((s, e) => s + e.netPrice, 0); // Other expenses (Paper, etc.)
+  
+  // Total Net Purchases should include BOTH Fabrics and Expenses
+  const totalNetPurchases = netPurchasesFromFabrics + netExpenses; 
+
   const vatPaid = filteredPurchases.reduce((s, p) => s + p.vatAmount, 0) + filteredExpenses.reduce((s, e) => s + e.vatAmount, 0);
   const totalCashOut = filteredPurchases.reduce((s, p) => s + p.finalPrice, 0) + filteredExpenses.reduce((s, e) => s + e.finalPrice, 0);
+  
   const totalRevenue = filteredOrders.reduce((s, o) => s + o.subtotal, 0);
   const totalVATCollected = filteredOrders.reduce((s, o) => s + o.vatAmount, 0);
-  const totalGrossProfit = totalRevenue - netPurchases - filteredExpenses.reduce((s, e) => s + e.netPrice, 0);
+  
+  // Gross Profit = Sales - (Fabric Purchases + Other Expenses)
+  const totalGrossProfit = totalRevenue - totalNetPurchases;
+
+  // --- FIXED EXPORT FUNCTION ---
+  const exportAllData = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      
+      // Handle Inventory Data (Safe check for empty array)
+      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Meters: r.meters }))) : [];
+      if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
+      
+      // Sales
+      const salesData = orders.map(o => ({ Invoice: o.invoiceNo, Customer: o.customer, Date: o.date, Total: o.finalPrice, Status: o.status }));
+      if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
+      
+      // Purchases
+      const purchaseData = purchases.map(p => ({ Invoice: p.invoiceNo, Supplier: p.supplier, Date: p.date, Total: p.finalPrice }));
+      if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
+      
+      // Expenses
+      const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
+      if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
+      
+      // Suppliers
+      const supplierData = suppliers.map(s => ({ Company: s.name, Contact: s.contact, VAT: s.vatNumber, Phone: s.phone, Email: s.email, Address: s.address, IBAN: s.iban }));
+      if(supplierData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(supplierData), 'Suppliers');
+      
+      // Customers
+      const customerData = customers.map(c => ({ Company: c.name, Contact: c.contact, VAT: c.vatNumber, Phone: c.phone, Email: c.email, Address: c.address, IBAN: c.iban }));
+      if(customerData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customerData), 'Customers');
+
+      XLSX.writeFile(wb, `Elgrecotex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+      alert("Error exporting data: " + error.message);
+      console.error(error);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-         <button className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700"><Download size={16}/> Export All Data</button>
+         <button onClick={exportAllData} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700 shadow-md font-bold">
+            <Download size={16}/> Export All Data
+         </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <DashboardCard title="Total Fabrics" value={totalFabrics} icon={Package} color="blue" onClick={() => setActiveTab('inventory')} />
@@ -272,9 +319,9 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow-sm p-6 border-t-4 border-blue-500">
-           <h3 className="font-bold text-gray-700 uppercase mb-6">Purchases</h3>
+           <h3 className="font-bold text-gray-700 uppercase mb-6">Purchases & Expenses</h3>
            <div className="space-y-4">
-              <div className="flex justify-between font-medium text-gray-600"><span>Net Purchases:</span> <span>€{netPurchases.toFixed(2)}</span></div>
+              <div className="flex justify-between font-medium text-gray-600"><span>Net Purchases (Fabrics + Exp):</span> <span>€{totalNetPurchases.toFixed(2)}</span></div>
               <div className="flex justify-between font-medium text-gray-600"><span>VAT Paid:</span> <span>€{vatPaid.toFixed(2)}</span></div>
               <div className="bg-blue-50 p-4 rounded-lg flex justify-between items-center mt-4">
                  <span className="text-blue-800 font-bold">Total Cash Out:</span>
@@ -286,7 +333,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
            <h3 className="font-bold text-gray-700 uppercase mb-6">Sales</h3>
            <div className="space-y-4">
               <div className="flex justify-between font-medium text-gray-600"><span>Total Revenue:</span> <span>€{totalRevenue.toFixed(2)}</span></div>
-              <div className="flex justify-between font-medium text-gray-600"><span>Total Cost (Purchases + Exp):</span> <span>€{(netPurchases + filteredExpenses.reduce((s, e) => s + e.netPrice, 0)).toFixed(2)}</span></div>
+              <div className="flex justify-between font-medium text-gray-600"><span>Total Cost (Purchases + Exp):</span> <span>€{totalNetPurchases.toFixed(2)}</span></div>
               <div className="flex justify-between font-medium text-gray-600"><span>Total VAT Collected:</span> <span>€{totalVATCollected.toFixed(2)}</span></div>
               <div className="bg-green-50 p-4 rounded-lg flex justify-between items-center mt-4">
                  <span className="text-green-800 font-bold">Total Gross Profit:</span>
