@@ -331,18 +331,15 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
       const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price }))) : [];
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
-      // FIXED: Added (o.items || []) check to prevent crash on bad data
       const salesData = orders.flatMap(o => (o.items || []).map(item => ({ Date: o.date, Invoice: o.invoiceNo, Customer: o.customer, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (o.vatRate/100), Total: item.totalPrice * (1 + o.vatRate/100), Status: o.status })));
       if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
       
-      // FIXED: Added (p.items || []) check
       const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ Date: p.date, Supplier: p.supplier, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (p.vatRate/100), Total: item.totalPrice * (1 + p.vatRate/100) })));
       if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
       
       const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
       if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
       
-      // FIXED: Added (s.items || []) check for Samples
       const sampleData = samples.flatMap(s => 
         (s.items || []).map(item => ({
             Date: s.date,
@@ -424,8 +421,8 @@ const DashboardCard = ({ title, value, icon: Icon, color, onClick }) => {
 // --- UPDATED SAMPLES TAB ---
 const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
-  const [viewLog, setViewLog] = useState(null); // For Viewing
-  const [editingId, setEditingId] = useState(null); // For Editing
+  const [viewLog, setViewLog] = useState(null); 
+  const [editingId, setEditingId] = useState(null); 
   
   const [newLog, setNewLog] = useState({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] });
   const [item, setItem] = useState({ fabricCode: '', description: '', meters: '' });
@@ -477,58 +474,28 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
         <div className="bg-white border-2 border-purple-500 rounded-lg p-6 mb-6 shadow-md animate-in fade-in">
           <h3 className="font-bold text-lg mb-4 text-purple-700">{editingId ? 'Edit Shipment' : 'Log New Sample Shipment'}</h3>
           
-          {/* HEADER INFO */}
           <div className="grid grid-cols-2 gap-4 mb-6 pb-4 border-b">
-             <div>
-                <label className="text-xs font-bold text-gray-500">Date</label>
-                <input type="date" className="w-full border p-2 rounded" value={newLog.date} onChange={e => setNewLog({...newLog, date: e.target.value})} />
-             </div>
-             <div>
-                <label className="text-xs font-bold text-gray-500">Customer (Type or Select)</label>
-                <input className="w-full border p-2 rounded" list="customer-options" value={newLog.customer} onChange={e => setNewLog({...newLog, customer: e.target.value})} placeholder="e.g. New Lead Corp"/>
-                <datalist id="customer-options">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist>
-             </div>
-             <div className="col-span-2">
-                <label className="text-xs font-bold text-gray-500">Shipment Notes</label>
-                <input className="w-full border p-2 rounded" placeholder="e.g. Sent via DHL / Courier" value={newLog.notes} onChange={e => setNewLog({...newLog, notes: e.target.value})} />
-             </div>
+             <div><label className="text-xs font-bold text-gray-500">Date</label><input type="date" className="w-full border p-2 rounded" value={newLog.date} onChange={e => setNewLog({...newLog, date: e.target.value})} /></div>
+             <div><label className="text-xs font-bold text-gray-500">Customer (Type or Select)</label><input className="w-full border p-2 rounded" list="customer-options" value={newLog.customer} onChange={e => setNewLog({...newLog, customer: e.target.value})} placeholder="e.g. New Lead Corp"/><datalist id="customer-options">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></div>
+             <div className="col-span-2"><label className="text-xs font-bold text-gray-500">Shipment Notes</label><input className="w-full border p-2 rounded" placeholder="e.g. Sent via DHL / Courier" value={newLog.notes} onChange={e => setNewLog({...newLog, notes: e.target.value})} /></div>
           </div>
 
-          {/* ITEM ENTRY */}
           <div className="bg-purple-50 p-4 rounded mb-4">
              <h4 className="font-bold text-sm text-purple-800 mb-2">Add Fabrics to Shipment</h4>
              <div className="flex gap-2 items-end mb-2">
-                <div className="flex-1">
-                    <label className="text-xs font-bold text-gray-500">Fabric (Type/Select)</label>
-                    <input className="w-full border p-2 rounded" list="fabric-options" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Fabric Name"/>
-                    <datalist id="fabric-options">{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`} />)}</datalist>
-                </div>
-                <div className="flex-1">
-                    <label className="text-xs font-bold text-gray-500">Details</label>
-                    <input className="w-full border p-2 rounded" placeholder="Color / Subcode" value={item.description} onChange={e => setItem({...item, description: e.target.value})} />
-                </div>
-                <div className="w-24">
-                    <label className="text-xs font-bold text-gray-500">Length</label>
-                    <input className="w-full border p-2 rounded" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
-                </div>
+                <div className="flex-1"><label className="text-xs font-bold text-gray-500">Fabric (Type/Select)</label><input className="w-full border p-2 rounded" list="fabric-options" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Fabric Name"/><datalist id="fabric-options">{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`} />)}</datalist></div>
+                <div className="flex-1"><label className="text-xs font-bold text-gray-500">Details</label><input className="w-full border p-2 rounded" placeholder="Color / Subcode" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /></div>
+                <div className="w-24"><label className="text-xs font-bold text-gray-500">Length</label><input className="w-full border p-2 rounded" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} /></div>
                 <button onClick={addItem} className="bg-purple-600 text-white px-4 py-2 rounded font-bold h-10 hover:bg-purple-700">Add</button>
              </div>
-
-             {/* ITEM LIST */}
              {newLog.items.map((i, idx) => (
                  <div key={idx} className="flex justify-between items-center border-b border-purple-200 py-1 text-sm">
-                     <span className="font-bold text-gray-700">{i.fabricCode}</span>
-                     <span className="text-gray-600">{i.description}</span>
-                     <span className="text-gray-600">{i.meters ? i.meters + 'm' : ''}</span>
+                     <span className="font-bold text-gray-700">{i.fabricCode}</span><span className="text-gray-600">{i.description}</span><span className="text-gray-600">{i.meters ? i.meters + 'm' : ''}</span>
                      <button onClick={() => setNewLog({...newLog, items: newLog.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
                  </div>
              ))}
           </div>
-
-          <div className="flex gap-2">
-             <button onClick={saveLog} className="bg-purple-600 text-white px-6 py-2 rounded font-bold hover:bg-purple-700">{editingId ? 'Update Log' : 'Save Log'}</button>
-             <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold text-gray-700">Cancel</button>
-          </div>
+          <div className="flex gap-2"><button onClick={saveLog} className="bg-purple-600 text-white px-6 py-2 rounded font-bold hover:bg-purple-700">{editingId ? 'Update Log' : 'Save Log'}</button><button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold text-gray-700">Cancel</button></div>
         </div>
       )}
 
@@ -538,15 +505,8 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
           <tbody>
             {samples.length > 0 ? samples.map(s => (
               <tr key={s.id} className="border-b hover:bg-gray-50">
-                <td className="p-4 text-gray-500">{s.date}</td>
-                <td className="p-4 font-bold">{s.customer}</td>
-                <td className="p-4 text-center"><span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold">{s.items?.length || 0} Fabrics</span></td>
-                <td className="p-4 text-gray-500 italic">{s.notes}</td>
-                <td className="p-4 text-right flex justify-end gap-2">
-                    <button onClick={() => setViewLog(s)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button>
-                    <button onClick={() => handleEdit(s)} className="text-blue-500 hover:text-blue-700"><Pencil size={18}/></button>
-                    <button onClick={() => deleteSample(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={18}/></button>
-                </td>
+                <td className="p-4 text-gray-500">{s.date}</td><td className="p-4 font-bold">{s.customer}</td><td className="p-4 text-center"><span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold">{(s.items || []).length} Fabrics</span></td><td className="p-4 text-gray-500 italic">{s.notes}</td>
+                <td className="p-4 text-right flex justify-end gap-2"><button onClick={() => setViewLog(s)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => handleEdit(s)} className="text-blue-500 hover:text-blue-700"><Pencil size={18}/></button><button onClick={() => deleteSample(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={18}/></button></td>
               </tr>
             )) : <tr><td colSpan="5" className="p-8 text-center text-gray-400 italic">No shipments logged yet.</td></tr>}
           </tbody>
@@ -727,6 +687,7 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
   );
 };
 
+// --- UPDATED SALES INVOICES (CRASH FIXED) ---
 const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -744,12 +705,13 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
   };
 
   const addItem = () => {
-    // FIXED: Use == instead of === for rollId to handle string/number mismatch, or parseInt safely
+    // CRASH FIX: Safe Roll Checking
     if (item.rollId && item.meters && item.pricePerMeter) {
-      const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); // Loose equality fixes the crash
+      // Loose equality (==) handles if rollId is string or number
+      const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId);
       if (!roll) return;
       const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter);
-      setNewOrder({ ...newOrder, items: [...newOrder.items, { ...item, subCode: roll.subCode, description: roll.description, totalPrice: total }] });
+      setNewOrder({ ...newOrder, items: [...(newOrder.items||[]), { ...item, subCode: roll.subCode, description: roll.description, totalPrice: total }] });
       setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
     }
   };
@@ -759,7 +721,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
         const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode);
         if(fabric) {
             const updatedRolls = fabric.rolls.map(r => {
-                if(r.rollId === parseInt(orderItem.rollId)) {
+                if(r.rollId == orderItem.rollId) {
                     return { ...r, meters: Math.max(0, parseFloat(r.meters) - parseFloat(orderItem.meters)) };
                 }
                 return r;
@@ -770,7 +732,8 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
   };
 
   const saveOrder = async () => {
-    const subtotal = newOrder.items.reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0);
+    // CRASH FIX: Safe Reduce
+    const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0);
     const vat = subtotal * (newOrder.vatRate / 100);
     const final = subtotal + vat;
     const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final };
@@ -809,7 +772,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
       </div>
 
       {showAdd && (
-        <div className="bg-white border border-green-500 rounded-lg p-6 mb-6 shadow-lg">
+        <div className="bg-white border border-green-500 rounded-lg p-6 mb-6 shadow-lg animate-in fade-in">
           <h3 className="font-bold text-lg mb-4 text-gray-800">{editingId ? 'Edit Sales Invoice' : 'Create Sales Invoice'}</h3>
           <div className="grid grid-cols-5 gap-4 mb-6">
             <div><label className="text-sm font-semibold text-gray-700 block mb-1">Customer</label>
@@ -842,12 +805,12 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
               <input type="number" placeholder="Price/M" className="border p-2 rounded w-32 bg-gray-50" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} />
               <button onClick={addItem} className="bg-green-600 text-white px-6 rounded font-bold hover:bg-green-700">Add Item</button>
             </div>
-            {newOrder.items.length > 0 && (
+            {(newOrder.items||[]).length > 0 && (
               <div className="bg-white border rounded p-0 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100"><tr><th className="text-left p-2">Item</th><th className="text-right p-2">Details</th><th className="text-right p-2">Total</th><th className="text-right p-2">Action</th></tr></thead>
                   <tbody>
-                    {newOrder.items.map((i, idx) => (
+                    {(newOrder.items||[]).map((i, idx) => (
                       <tr key={idx} className="border-b last:border-0">
                         <td className="p-2">{i.fabricCode} (Roll #{i.rollId})</td>
                         <td className="p-2 text-right">{i.meters}m x €{i.pricePerMeter}</td>
@@ -862,7 +825,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
           </div>
           <div className="flex gap-2">
             <button onClick={saveOrder} className="bg-gray-400 text-white px-4 py-2 rounded font-bold hover:bg-gray-500">{editingId ? 'Update Invoice' : 'Save Invoice'}</button>
-            <button onClick={closeForm} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancel</button>
+            <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancel</button>
           </div>
         </div>
       )}
@@ -897,6 +860,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
   );
 };
 
+// --- UPDATED PURCHASES: AUTO-CREATE INVENTORY ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
@@ -913,9 +877,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
       }
    };
 
-   // --- CORRECTED SAVE & UPDATE INVENTORY LOGIC ---
    const savePurchase = async () => {
-      // 1. Calculate Totals (Safely converting to numbers)
       const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
       const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
       const final = subtotal + vat;
@@ -933,42 +895,45 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
       };
 
       if(editingId) {
-         // Update Invoice Only
          await updateDoc(doc(db, "purchases", editingId), purchaseData);
       } else {
-         // 2. Create Invoice
          await addDoc(collection(db, "purchases"), purchaseData);
          
-         // 3. GROUP ROLLS BY FABRIC (Prevents race conditions)
+         // --- SMART INVENTORY UPDATE ---
          const rollsByFabric = {};
 
+         // 1. Group items by fabric code
          newPurchase.items.forEach(purchasedItem => {
-             const fabric = fabrics.find(f => f.mainCode === purchasedItem.fabricCode);
-             if (fabric) {
-                 const newRoll = {
-                     rollId: Date.now() + Math.random(), 
-                     subCode: purchasedItem.subCode || 'NEW',
-                     description: purchasedItem.description || '', // Carry description to inventory
-                     meters: parseFloat(purchasedItem.meters) || 0,
-                     location: 'Warehouse',
-                     price: parseFloat(purchasedItem.pricePerMeter) || 0,
-                     dateAdded: new Date().toISOString().split('T')[0]
-                 };
-                 
-                 if (!rollsByFabric[fabric.id]) {
-                     rollsByFabric[fabric.id] = [];
-                 }
-                 rollsByFabric[fabric.id].push(newRoll);
-             }
+             const code = purchasedItem.fabricCode;
+             if (!rollsByFabric[code]) rollsByFabric[code] = [];
+             
+             rollsByFabric[code].push({
+                 rollId: Date.now() + Math.random(), 
+                 subCode: purchasedItem.subCode || 'NEW',
+                 description: purchasedItem.description || '', 
+                 meters: parseFloat(purchasedItem.meters) || 0,
+                 location: 'Warehouse',
+                 price: parseFloat(purchasedItem.pricePerMeter) || 0,
+                 dateAdded: new Date().toISOString().split('T')[0]
+             });
          });
 
-         // 4. EXECUTE UPDATES
-         for (const [fabricId, newRolls] of Object.entries(rollsByFabric)) {
-             const fabric = fabrics.find(f => f.id === fabricId);
-             if (fabric) {
-                 const currentRolls = fabric.rolls || [];
-                 await updateDoc(doc(db, "fabrics", fabricId), { 
-                     rolls: [...currentRolls, ...newRolls] 
+         // 2. Update existing fabrics OR create new ones
+         for (const [code, newRolls] of Object.entries(rollsByFabric)) {
+             const existingFabric = fabrics.find(f => f.mainCode === code);
+             
+             if (existingFabric) {
+                 // Add to existing
+                 await updateDoc(doc(db, "fabrics", existingFabric.id), { 
+                     rolls: [...(existingFabric.rolls || []), ...newRolls] 
+                 });
+             } else {
+                 // Create NEW Fabric automatically
+                 await addDoc(collection(db, "fabrics"), {
+                     mainCode: code,
+                     name: "New from Purchase", // Default name
+                     color: "Assorted",
+                     rolls: newRolls
                  });
              }
          }
@@ -1009,10 +974,21 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                <div className="mb-6">
                   <h4 className="font-bold text-sm mb-2 text-gray-700">Add Items</h4>
                   <div className="flex gap-2 mb-3">
-                     <select className="border p-2 rounded flex-1" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})}>
-                        <option value="">Fabric</option>
-                        {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode}</option>)}
-                     </select>
+                     
+                     {/* FREE TEXT FABRIC INPUT */}
+                     <div className="flex-1">
+                        <input 
+                            className="w-full border p-2 rounded" 
+                            list="fabric-options-purchases" 
+                            value={item.fabricCode} 
+                            onChange={e => setItem({...item, fabricCode: e.target.value})} 
+                            placeholder="Fabric Code (Type New or Select)"
+                        />
+                        <datalist id="fabric-options-purchases">
+                            {fabrics.map(f => <option key={f.id} value={f.mainCode} />)}
+                        </datalist>
+                     </div>
+
                      <input className="border p-2 rounded flex-1" placeholder="Sub Code" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
                      <input className="border p-2 rounded flex-1" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
                      <input type="number" className="border p-2 rounded flex-1" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
@@ -1062,6 +1038,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
    )
 };
 
+// ... (Rest of code: Expenses, ContactList, FabricERP - Same as before)
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
