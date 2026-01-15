@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase'; 
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';
-import { Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, Image as ImageIcon, Home, Pencil, Lock } from 'lucide-react';
+import { Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, Image as ImageIcon, Home, Pencil, Lock, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 
@@ -240,7 +240,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 
 // --- TABS ---
 
-const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, dateRangeStart, dateRangeEnd, setActiveTab }) => {
+const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, samples, dateRangeStart, dateRangeEnd, setActiveTab }) => {
   const totalFabrics = fabrics.length;
   const totalRolls = fabrics.reduce((sum, f) => sum + (f.rolls ? f.rolls.length : 0), 0);
   const totalMeters = fabrics.reduce((sum, f) => sum + f.rolls?.reduce((rSum, r) => rSum + parseFloat(r.meters || 0), 0) || 0, 0);
@@ -263,7 +263,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
-  // --- FIXED EXPORT FUNCTION ---
+  // --- EXPORT FUNCTION WITH SAMPLES ---
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -280,6 +280,10 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
       const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
       if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
       
+      // --- NEW: SAMPLES SHEET ---
+      const sampleData = samples.map(s => ({ Date: s.date, Customer: s.customer, FabricCode: s.fabricCode, Description: s.description, Notes: s.notes }));
+      if(sampleData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleData), 'Samples');
+
       const supplierData = suppliers.map(s => ({ Company: s.name, Contact: s.contact, VAT: s.vatNumber, Phone: s.phone, Email: s.email, Address: s.address, IBAN: s.iban }));
       if(supplierData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(supplierData), 'Suppliers');
       
@@ -342,6 +346,72 @@ const DashboardCard = ({ title, value, icon: Icon, color, onClick }) => {
     <div onClick={onClick} className={`${style[color]} border rounded-lg p-5 cursor-pointer hover:shadow-md transition-all flex flex-col justify-between h-32 relative overflow-hidden`}>
       <div><p className="text-xs font-bold uppercase mb-1 opacity-80">{title}</p><p className="text-3xl font-bold">{value}</p></div>
       <div className="self-end"><Icon className="w-10 h-10 opacity-30" /></div>
+    </div>
+  );
+};
+
+// --- NEW COMPONENT: SAMPLES TAB ---
+const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newSample, setNewSample] = useState({ date: new Date().toISOString().split('T')[0], customer: '', fabricCode: '', description: '', notes: '' });
+
+  const saveSample = async () => {
+    if (newSample.customer && newSample.fabricCode) {
+      await addDoc(collection(db, "samples"), { ...newSample, createdAt: Date.now() });
+      setShowAdd(false);
+      setNewSample({ date: new Date().toISOString().split('T')[0], customer: '', fabricCode: '', description: '', notes: '' });
+    }
+  };
+
+  const deleteSample = async (id) => {
+    if(confirm("Delete this log?")) await deleteDoc(doc(db, "samples", id));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <button onClick={onBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-2"><ArrowLeft size={16} /> Back to Dashboard</button>
+          <h2 className="text-2xl font-bold text-gray-900">Sample Logs</h2>
+          <p className="text-gray-500 text-sm">Track fabric samples sent to customers.</p>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="bg-purple-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-purple-700 font-bold"><Plus size={16} /> LOG NEW SAMPLE</button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white border-2 border-purple-500 rounded-lg p-6 mb-6 shadow-md animate-in fade-in">
+          <h3 className="font-bold text-lg mb-4 text-purple-700">Log Sent Sample</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+             <div><label className="text-xs font-bold text-gray-500">Date</label><input type="date" className="w-full border p-2 rounded" value={newSample.date} onChange={e => setNewSample({...newSample, date: e.target.value})} /></div>
+             <div><label className="text-xs font-bold text-gray-500">Customer</label><select className="w-full border p-2 rounded" value={newSample.customer} onChange={e => setNewSample({...newSample, customer: e.target.value})}><option value="">-- Select Customer --</option>{customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+             <div><label className="text-xs font-bold text-gray-500">Fabric</label><select className="w-full border p-2 rounded" value={newSample.fabricCode} onChange={e => setNewSample({...newSample, fabricCode: e.target.value})}><option value="">-- Select Fabric --</option>{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`}>{f.mainCode} - {f.name}</option>)}</select></div>
+             <div><label className="text-xs font-bold text-gray-500">Description / Subcode</label><input className="w-full border p-2 rounded" placeholder="e.g. 100-1 (Red)" value={newSample.description} onChange={e => setNewSample({...newSample, description: e.target.value})} /></div>
+          </div>
+          <div className="mb-4"><label className="text-xs font-bold text-gray-500">Notes</label><textarea className="w-full border p-2 rounded" placeholder="e.g. Sent via courier" value={newSample.notes} onChange={e => setNewSample({...newSample, notes: e.target.value})} /></div>
+          <div className="flex gap-2">
+             <button onClick={saveSample} className="bg-purple-600 text-white px-6 py-2 rounded font-bold hover:bg-purple-700">Save Log</button>
+             <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold text-gray-700">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white border rounded-lg shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b"><tr><th className="text-left p-4">Date</th><th className="text-left p-4">Customer</th><th className="text-left p-4">Fabric</th><th className="text-left p-4">Details</th><th className="text-left p-4">Notes</th><th className="text-right p-4">Action</th></tr></thead>
+          <tbody>
+            {samples.length > 0 ? samples.map(s => (
+              <tr key={s.id} className="border-b hover:bg-gray-50">
+                <td className="p-4 text-gray-500">{s.date}</td>
+                <td className="p-4 font-bold">{s.customer}</td>
+                <td className="p-4">{s.fabricCode}</td>
+                <td className="p-4 text-gray-600">{s.description}</td>
+                <td className="p-4 text-gray-500 italic">{s.notes}</td>
+                <td className="p-4 text-right"><button onClick={() => deleteSample(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
+              </tr>
+            )) : <tr><td colSpan="6" className="p-8 text-center text-gray-400 italic">No samples logged yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -626,7 +696,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
               </select>
               <select className="border p-2 rounded flex-1 bg-gray-50" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}>
                 <option value="">Select Roll</option>
-                {selectedFabric?.rolls.map(r => <option key={r.rollId} value={r.rollId}>#{r.rollId} - {r.subCode} ({r.meters}m)</option>)}
+                {selectedFabric?.rolls?.map(r => <option key={r.rollId} value={r.rollId}>#{r.rollId} - {r.subCode} ({r.meters}m) {r.description}</option>)}
               </select>
               <input type="number" placeholder="Meters" className="border p-2 rounded w-32 bg-gray-50" value={item.meters} onChange={e => setItem({ ...item, meters: e.target.value })} />
               <input type="number" placeholder="Price/M" className="border p-2 rounded w-32 bg-gray-50" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} />
@@ -1036,6 +1106,7 @@ const FabricERP = () => {
   const [expenses, setExpenses] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [samples, setSamples] = useState([]); // NEW STATE
 
   // REAL-TIME DATA SYNC
   useEffect(() => {
@@ -1047,8 +1118,9 @@ const FabricERP = () => {
     const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); };
+    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); };
   }, [isAuthenticated]);
 
   // --- SHOW LOGIN SCREEN IF NOT AUTHENTICATED ---
@@ -1072,7 +1144,7 @@ const FabricERP = () => {
            </div>
            
            <nav className="flex items-center gap-6">
-             {['dashboard', 'inventory', 'salesinvoices', 'purchases', 'expenses', 'suppliers', 'customers'].map(tab => (
+             {['dashboard', 'inventory', 'salesinvoices', 'purchases', 'expenses', 'suppliers', 'customers', 'samples'].map(tab => (
                <button 
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -1085,6 +1157,7 @@ const FabricERP = () => {
                   {tab === 'expenses' && <FileText size={16}/>}
                   {tab === 'suppliers' && <Users size={16}/>}
                   {tab === 'customers' && <Users size={16}/>}
+                  {tab === 'samples' && <Tag size={16}/>}
                   {tab === 'salesinvoices' ? 'Sales Invoices' : tab === 'expenses' ? 'Other Expenses' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                </button>
              ))}
@@ -1100,13 +1173,14 @@ const FabricERP = () => {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-6 py-8 print:p-0">
-        {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
+        {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
         {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} onBack={() => setActiveTab('dashboard')} />}
         {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
         {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
         {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
         {activeTab === 'suppliers' && <ContactList title="Suppliers" data={suppliers} collectionName="suppliers" onBack={() => setActiveTab('dashboard')} />}
         {activeTab === 'customers' && <ContactList title="Customers" data={customers} collectionName="customers" onBack={() => setActiveTab('dashboard')} />}
+        {activeTab === 'samples' && <SamplesTab samples={samples} customers={customers} fabrics={fabrics} onBack={() => setActiveTab('dashboard')} />}
       </div>
     </div>
   );
