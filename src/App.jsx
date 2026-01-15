@@ -238,7 +238,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
   );
 };
 
-// --- NEW: SAMPLE SLIP VIEWER (FOR PRINTING) ---
+// --- SAMPLE SLIP VIEWER ---
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
   return (
     <div className="bg-gray-100 min-h-screen p-6 animate-in fade-in">
@@ -279,7 +279,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
                 </tr>
              </thead>
              <tbody className="divide-y">
-                {sampleLog.items.map((item, idx) => (
+                {sampleLog.items && sampleLog.items.map((item, idx) => (
                    <tr key={idx}>
                       <td className="py-4 px-4 font-bold text-gray-800">{item.fabricCode}</td>
                       <td className="py-4 px-4 text-gray-600">{item.description || '-'}</td>
@@ -323,7 +323,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
-  // --- EXPORT FUNCTION WITH MULTI-ITEM SAMPLES ---
+  // --- FIXED EXPORT FUNCTION (CRASH PROOF) ---
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -331,18 +331,20 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
       const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price }))) : [];
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
-      const salesData = orders.flatMap(o => o.items.map(item => ({ Date: o.date, Invoice: o.invoiceNo, Customer: o.customer, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (o.vatRate/100), Total: item.totalPrice * (1 + o.vatRate/100), Status: o.status })));
+      // FIXED: Added (o.items || []) check to prevent crash on bad data
+      const salesData = orders.flatMap(o => (o.items || []).map(item => ({ Date: o.date, Invoice: o.invoiceNo, Customer: o.customer, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (o.vatRate/100), Total: item.totalPrice * (1 + o.vatRate/100), Status: o.status })));
       if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
       
-      const purchaseData = purchases.flatMap(p => p.items.map(item => ({ Date: p.date, Supplier: p.supplier, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (p.vatRate/100), Total: item.totalPrice * (1 + p.vatRate/100) })));
+      // FIXED: Added (p.items || []) check
+      const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ Date: p.date, Supplier: p.supplier, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (p.vatRate/100), Total: item.totalPrice * (1 + p.vatRate/100) })));
       if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
       
       const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
       if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
       
-      // --- NEW: DETAILED SAMPLES SHEET ---
+      // FIXED: Added (s.items || []) check for Samples
       const sampleData = samples.flatMap(s => 
-        s.items.map(item => ({
+        (s.items || []).map(item => ({
             Date: s.date,
             Customer: s.customer,
             Notes: s.notes,
@@ -419,7 +421,7 @@ const DashboardCard = ({ title, value, icon: Icon, color, onClick }) => {
   );
 };
 
-// --- UPDATED SAMPLES TAB: MULTIPLE ITEMS & PRINT ---
+// --- UPDATED SAMPLES TAB ---
 const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); // For Viewing
