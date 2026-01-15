@@ -150,7 +150,7 @@ const calculateTotalWarehouseValue = (fabrics, purchases) => {
   return total;
 };
 
-// --- 4. SUB-COMPONENTS ---
+// --- 4. PRINT VIEWERS ---
 
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
@@ -238,6 +238,66 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
   );
 };
 
+// --- NEW: SAMPLE SLIP VIEWER (FOR PRINTING) ---
+const SampleSlipViewer = ({ sampleLog, onBack }) => {
+  return (
+    <div className="bg-gray-100 min-h-screen p-6 animate-in fade-in">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex justify-between items-center mb-6 no-print">
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 bg-white px-4 py-2 rounded shadow-sm border">
+            <ArrowLeft className="w-4 h-4" /> Back to Samples
+          </button>
+          <button onClick={() => window.print()} className="bg-purple-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-purple-700 shadow-sm">
+            <Printer className="w-4 h-4" /> Print Packing Slip
+          </button>
+        </div>
+
+        <div className="bg-white p-12 rounded-lg shadow-lg" id="invoice-print">
+          <div className="border-b-2 border-purple-500 pb-6 mb-8 flex justify-between items-start">
+             <div>
+                <h1 className="text-3xl font-bold text-gray-900 uppercase">Sample Packing Slip</h1>
+                <p className="text-gray-500 mt-2">Elgrecotex</p>
+             </div>
+             <div className="text-right">
+                <p className="font-bold text-lg">{sampleLog.date}</p>
+                <p className="text-gray-500 text-sm">Sent via: {sampleLog.carrier || 'Standard Post'}</p>
+             </div>
+          </div>
+
+          <div className="mb-10">
+             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sent To</h3>
+             <p className="text-2xl font-bold text-gray-900">{sampleLog.customer}</p>
+             <p className="text-gray-600 italic mt-2">{sampleLog.notes}</p>
+          </div>
+
+          <table className="w-full mb-12 border-collapse">
+             <thead>
+                <tr className="bg-gray-50 border-y-2 border-gray-100 text-gray-600 text-sm uppercase">
+                   <th className="text-left py-3 px-4">Fabric Code / Name</th>
+                   <th className="text-left py-3 px-4">Details (Subcode/Desc)</th>
+                   <th className="text-right py-3 px-4">Length</th>
+                </tr>
+             </thead>
+             <tbody className="divide-y">
+                {sampleLog.items.map((item, idx) => (
+                   <tr key={idx}>
+                      <td className="py-4 px-4 font-bold text-gray-800">{item.fabricCode}</td>
+                      <td className="py-4 px-4 text-gray-600">{item.description || '-'}</td>
+                      <td className="py-4 px-4 text-right font-mono">{item.meters ? `${item.meters}m` : 'Sample'}</td>
+                   </tr>
+                ))}
+             </tbody>
+          </table>
+
+          <div className="border-t pt-8 mt-8 text-center text-gray-400 text-sm">
+             <p>Thank you for your interest in Elgrecotex fabrics.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- TABS ---
 
 const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, samples, dateRangeStart, dateRangeEnd, setActiveTab }) => {
@@ -263,7 +323,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
-  // --- EXPORT FUNCTION WITH SAMPLES ---
+  // --- EXPORT FUNCTION WITH MULTI-ITEM SAMPLES ---
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -280,8 +340,17 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
       const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
       if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
       
-      // --- NEW: SAMPLES SHEET ---
-      const sampleData = samples.map(s => ({ Date: s.date, Customer: s.customer, FabricCode: s.fabricCode, Description: s.description, Notes: s.notes }));
+      // --- NEW: DETAILED SAMPLES SHEET ---
+      const sampleData = samples.flatMap(s => 
+        s.items.map(item => ({
+            Date: s.date,
+            Customer: s.customer,
+            Notes: s.notes,
+            Fabric: item.fabricCode,
+            Description: item.description,
+            Length: item.meters
+        }))
+      );
       if(sampleData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleData), 'Samples');
 
       const supplierData = suppliers.map(s => ({ Company: s.name, Contact: s.contact, VAT: s.vatNumber, Phone: s.phone, Email: s.email, Address: s.address, IBAN: s.iban }));
@@ -350,17 +419,41 @@ const DashboardCard = ({ title, value, icon: Icon, color, onClick }) => {
   );
 };
 
-// --- NEW COMPONENT: SAMPLES TAB ---
+// --- UPDATED SAMPLES TAB: MULTIPLE ITEMS & PRINT ---
 const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
-  const [newSample, setNewSample] = useState({ date: new Date().toISOString().split('T')[0], customer: '', fabricCode: '', description: '', notes: '' });
+  const [viewLog, setViewLog] = useState(null); // For Viewing
+  const [editingId, setEditingId] = useState(null); // For Editing
+  
+  const [newLog, setNewLog] = useState({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] });
+  const [item, setItem] = useState({ fabricCode: '', description: '', meters: '' });
 
-  const saveSample = async () => {
-    if (newSample.customer && newSample.fabricCode) {
-      await addDoc(collection(db, "samples"), { ...newSample, createdAt: Date.now() });
+  if (viewLog) return <SampleSlipViewer sampleLog={viewLog} onBack={() => setViewLog(null)} />;
+
+  const addItem = () => {
+      if(item.fabricCode) {
+          setNewLog({...newLog, items: [...newLog.items, item]});
+          setItem({ fabricCode: '', description: '', meters: '' });
+      }
+  };
+
+  const saveLog = async () => {
+    if (newLog.customer && newLog.items.length > 0) {
+      if (editingId) {
+          await updateDoc(doc(db, "samples", editingId), newLog);
+      } else {
+          await addDoc(collection(db, "samples"), { ...newLog, createdAt: Date.now() });
+      }
       setShowAdd(false);
-      setNewSample({ date: new Date().toISOString().split('T')[0], customer: '', fabricCode: '', description: '', notes: '' });
+      setEditingId(null);
+      setNewLog({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] });
     }
+  };
+
+  const handleEdit = (log) => {
+      setNewLog(log);
+      setEditingId(log.id);
+      setShowAdd(true);
   };
 
   const deleteSample = async (id) => {
@@ -372,24 +465,66 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
       <div className="flex justify-between items-center">
         <div>
           <button onClick={onBack} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-2"><ArrowLeft size={16} /> Back to Dashboard</button>
-          <h2 className="text-2xl font-bold text-gray-900">Sample Logs</h2>
-          <p className="text-gray-500 text-sm">Track fabric samples sent to customers.</p>
+          <h2 className="text-2xl font-bold text-gray-900">Sample Shipments</h2>
+          <p className="text-gray-500 text-sm">Log marketing samples sent to clients.</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="bg-purple-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-purple-700 font-bold"><Plus size={16} /> LOG NEW SAMPLE</button>
+        <button onClick={() => setShowAdd(true)} className="bg-purple-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-purple-700 font-bold"><Plus size={16} /> NEW SHIPMENT</button>
       </div>
 
       {showAdd && (
         <div className="bg-white border-2 border-purple-500 rounded-lg p-6 mb-6 shadow-md animate-in fade-in">
-          <h3 className="font-bold text-lg mb-4 text-purple-700">Log Sent Sample</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-             <div><label className="text-xs font-bold text-gray-500">Date</label><input type="date" className="w-full border p-2 rounded" value={newSample.date} onChange={e => setNewSample({...newSample, date: e.target.value})} /></div>
-             <div><label className="text-xs font-bold text-gray-500">Customer</label><select className="w-full border p-2 rounded" value={newSample.customer} onChange={e => setNewSample({...newSample, customer: e.target.value})}><option value="">-- Select Customer --</option>{customers.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
-             <div><label className="text-xs font-bold text-gray-500">Fabric</label><select className="w-full border p-2 rounded" value={newSample.fabricCode} onChange={e => setNewSample({...newSample, fabricCode: e.target.value})}><option value="">-- Select Fabric --</option>{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`}>{f.mainCode} - {f.name}</option>)}</select></div>
-             <div><label className="text-xs font-bold text-gray-500">Description / Subcode</label><input className="w-full border p-2 rounded" placeholder="e.g. 100-1 (Red)" value={newSample.description} onChange={e => setNewSample({...newSample, description: e.target.value})} /></div>
+          <h3 className="font-bold text-lg mb-4 text-purple-700">{editingId ? 'Edit Shipment' : 'Log New Sample Shipment'}</h3>
+          
+          {/* HEADER INFO */}
+          <div className="grid grid-cols-2 gap-4 mb-6 pb-4 border-b">
+             <div>
+                <label className="text-xs font-bold text-gray-500">Date</label>
+                <input type="date" className="w-full border p-2 rounded" value={newLog.date} onChange={e => setNewLog({...newLog, date: e.target.value})} />
+             </div>
+             <div>
+                <label className="text-xs font-bold text-gray-500">Customer (Type or Select)</label>
+                <input className="w-full border p-2 rounded" list="customer-options" value={newLog.customer} onChange={e => setNewLog({...newLog, customer: e.target.value})} placeholder="e.g. New Lead Corp"/>
+                <datalist id="customer-options">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist>
+             </div>
+             <div className="col-span-2">
+                <label className="text-xs font-bold text-gray-500">Shipment Notes</label>
+                <input className="w-full border p-2 rounded" placeholder="e.g. Sent via DHL / Courier" value={newLog.notes} onChange={e => setNewLog({...newLog, notes: e.target.value})} />
+             </div>
           </div>
-          <div className="mb-4"><label className="text-xs font-bold text-gray-500">Notes</label><textarea className="w-full border p-2 rounded" placeholder="e.g. Sent via courier" value={newSample.notes} onChange={e => setNewSample({...newSample, notes: e.target.value})} /></div>
+
+          {/* ITEM ENTRY */}
+          <div className="bg-purple-50 p-4 rounded mb-4">
+             <h4 className="font-bold text-sm text-purple-800 mb-2">Add Fabrics to Shipment</h4>
+             <div className="flex gap-2 items-end mb-2">
+                <div className="flex-1">
+                    <label className="text-xs font-bold text-gray-500">Fabric (Type/Select)</label>
+                    <input className="w-full border p-2 rounded" list="fabric-options" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Fabric Name"/>
+                    <datalist id="fabric-options">{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`} />)}</datalist>
+                </div>
+                <div className="flex-1">
+                    <label className="text-xs font-bold text-gray-500">Details</label>
+                    <input className="w-full border p-2 rounded" placeholder="Color / Subcode" value={item.description} onChange={e => setItem({...item, description: e.target.value})} />
+                </div>
+                <div className="w-24">
+                    <label className="text-xs font-bold text-gray-500">Length</label>
+                    <input className="w-full border p-2 rounded" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
+                </div>
+                <button onClick={addItem} className="bg-purple-600 text-white px-4 py-2 rounded font-bold h-10 hover:bg-purple-700">Add</button>
+             </div>
+
+             {/* ITEM LIST */}
+             {newLog.items.map((i, idx) => (
+                 <div key={idx} className="flex justify-between items-center border-b border-purple-200 py-1 text-sm">
+                     <span className="font-bold text-gray-700">{i.fabricCode}</span>
+                     <span className="text-gray-600">{i.description}</span>
+                     <span className="text-gray-600">{i.meters ? i.meters + 'm' : ''}</span>
+                     <button onClick={() => setNewLog({...newLog, items: newLog.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                 </div>
+             ))}
+          </div>
+
           <div className="flex gap-2">
-             <button onClick={saveSample} className="bg-purple-600 text-white px-6 py-2 rounded font-bold hover:bg-purple-700">Save Log</button>
+             <button onClick={saveLog} className="bg-purple-600 text-white px-6 py-2 rounded font-bold hover:bg-purple-700">{editingId ? 'Update Log' : 'Save Log'}</button>
              <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold text-gray-700">Cancel</button>
           </div>
         </div>
@@ -397,18 +532,21 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
 
       <div className="bg-white border rounded-lg shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b"><tr><th className="text-left p-4">Date</th><th className="text-left p-4">Customer</th><th className="text-left p-4">Fabric</th><th className="text-left p-4">Details</th><th className="text-left p-4">Notes</th><th className="text-right p-4">Action</th></tr></thead>
+          <thead className="bg-gray-50 border-b font-bold text-gray-900"><tr><th className="text-left p-4">Date</th><th className="text-left p-4">Customer</th><th className="text-center p-4">Items</th><th className="text-left p-4">Notes</th><th className="text-right p-4">Action</th></tr></thead>
           <tbody>
             {samples.length > 0 ? samples.map(s => (
               <tr key={s.id} className="border-b hover:bg-gray-50">
                 <td className="p-4 text-gray-500">{s.date}</td>
                 <td className="p-4 font-bold">{s.customer}</td>
-                <td className="p-4">{s.fabricCode}</td>
-                <td className="p-4 text-gray-600">{s.description}</td>
+                <td className="p-4 text-center"><span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold">{s.items?.length || 0} Fabrics</span></td>
                 <td className="p-4 text-gray-500 italic">{s.notes}</td>
-                <td className="p-4 text-right"><button onClick={() => deleteSample(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
+                <td className="p-4 text-right flex justify-end gap-2">
+                    <button onClick={() => setViewLog(s)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button>
+                    <button onClick={() => handleEdit(s)} className="text-blue-500 hover:text-blue-700"><Pencil size={18}/></button>
+                    <button onClick={() => deleteSample(s.id)} className="text-red-400 hover:text-red-600"><Trash2 size={18}/></button>
+                </td>
               </tr>
-            )) : <tr><td colSpan="6" className="p-8 text-center text-gray-400 italic">No samples logged yet.</td></tr>}
+            )) : <tr><td colSpan="5" className="p-8 text-center text-gray-400 italic">No shipments logged yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -722,7 +860,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
           </div>
           <div className="flex gap-2">
             <button onClick={saveOrder} className="bg-gray-400 text-white px-4 py-2 rounded font-bold hover:bg-gray-500">{editingId ? 'Update Invoice' : 'Save Invoice'}</button>
-            <button onClick={() => setShowAdd(false)} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancel</button>
+            <button onClick={closeForm} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancel</button>
           </div>
         </div>
       )}
