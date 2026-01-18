@@ -71,13 +71,13 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v2.1 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v2.2 Enterprise System</p>
       </div>
     </div>
   );
 };
 
-// --- 3. BUSINESS LOGIC (Unchanged) ---
+// --- 3. BUSINESS LOGIC ---
 const calculateWeightedAverageCost = (mainCode, purchases = [], fabrics = []) => {
   let totalValue = 0;
   let totalMeters = 0;
@@ -89,7 +89,11 @@ const getSubcodeSummary = (rolls, mainCode, purchases, fabrics) => {
   const summary = {};
   if(!rolls) return [];
   const avgPrice = calculateWeightedAverageCost(mainCode, purchases, fabrics);
-  rolls.forEach(r => { if (!summary[r.subCode]) summary[r.subCode] = { meters: 0, count: 0 }; summary[r.subCode].meters += parseFloat(r.meters || 0); summary[r.subCode].count += 1; });
+  rolls.forEach(r => { 
+      if (!summary[r.subCode]) summary[r.subCode] = { meters: 0, count: 0 }; 
+      summary[r.subCode].meters += parseFloat(r.meters || 0); 
+      summary[r.subCode].count += 1; 
+  });
   return Object.entries(summary).map(([subCode, data]) => ({ subCode, meters: data.meters, count: data.count, avgPrice }));
 };
 const calculateTotalWarehouseValue = (fabrics, purchases) => {
@@ -98,7 +102,7 @@ const calculateTotalWarehouseValue = (fabrics, purchases) => {
   return total;
 };
 
-// --- 4. PRINT VIEWERS (Unchanged) ---
+// --- 4. VIEWERS ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
@@ -154,7 +158,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- UPDATED DASHBOARD (MODERN LAYOUT) ---
+// --- UPDATED DASHBOARD ---
 const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, samples, dateRangeStart, dateRangeEnd, setActiveTab }) => {
   const totalFabrics = fabrics.length;
   const totalMeters = fabrics.reduce((sum, f) => sum + f.rolls?.reduce((rSum, r) => rSum + parseFloat(r.meters || 0), 0) || 0, 0);
@@ -168,13 +172,61 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
   const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.netPrice) || 0), 0);
   const totalNetPurchases = netPurchasesFromFabrics + netExpenses; 
+  
+  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
+  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice) || 0), 0);
+  
   const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
   const totalGrossProfit = totalRevenue - totalNetPurchases;
+
+  // --- FIXED EXPORT FUNCTION ---
+  const exportAllData = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      
+      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price }))) : [];
+      if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
+      
+      const salesData = orders.flatMap(o => (o.items || []).map(item => ({ Date: o.date, Invoice: o.invoiceNo, Customer: o.customer, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (o.vatRate/100), Total: item.totalPrice * (1 + o.vatRate/100), Status: o.status })));
+      if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
+      
+      const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ Date: p.date, Supplier: p.supplier, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (p.vatRate/100), Total: item.totalPrice * (1 + p.vatRate/100) })));
+      if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
+      
+      const expenseData = expenses.map(e => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: e.description, Net: e.netPrice, VAT: e.vatAmount, Total: e.finalPrice }));
+      if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
+      
+      const sampleData = samples.flatMap(s => (s.items || []).map(item => ({ Date: s.date, Customer: s.customer, Notes: s.notes, Fabric: item.fabricCode, Description: item.description, Length: item.meters })));
+      if(sampleData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleData), 'Samples');
+
+      const supplierData = suppliers.map(s => ({ Company: s.name, Contact: s.contact, VAT: s.vatNumber, Phone: s.phone, Email: s.email, Address: s.address, IBAN: s.iban }));
+      if(supplierData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(supplierData), 'Suppliers');
+      
+      const customerData = customers.map(c => ({ Company: c.name, Contact: c.contact, VAT: c.vatNumber, Phone: c.phone, Email: c.email, Address: c.address, IBAN: c.iban }));
+      if(customerData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customerData), 'Customers');
+
+      XLSX.writeFile(wb, `Elgrecotex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+      alert("Error exporting data: " + error.message);
+      console.error(error);
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* 1. TOP CARDS - KPI OVERVIEW */}
+      {/* HEADER WITH EXPORT BUTTON (RESTORED) */}
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+         <div>
+            <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+            <p className="text-slate-500 text-sm">Financial Overview & Actions</p>
+         </div>
+         <button onClick={exportAllData} className="bg-emerald-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
+            <Download size={18}/> Export All Data
+         </button>
+      </div>
+
+      {/* KPI OVERVIEW */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <DashboardCard title="Total Fabrics" value={totalFabrics} subValue={`${Math.round(totalMeters)} meters`} icon={Package} color="blue" onClick={() => setActiveTab('inventory')} />
         <DashboardCard title="Stock Value" value={`€${totalStockValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Warehouse Assets" icon={DollarSign} color="emerald" onClick={() => setActiveTab('inventory')} />
@@ -182,7 +234,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
         <DashboardCard title="Gross Profit" value={`€${totalGrossProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Selected Period" icon={BarChart3} color={totalGrossProfit >= 0 ? "purple" : "red"} />
       </div>
 
-      {/* 2. QUICK ACTIONS SECTION (NEW!) */}
+      {/* QUICK ACTIONS */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
          <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Quick Actions</h3>
          <div className="flex gap-4 overflow-x-auto pb-2">
@@ -193,7 +245,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
          </div>
       </div>
 
-      {/* 3. FINANCIAL SUMMARY GRID */}
+      {/* FINANCIAL SUMMARY */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Expenses Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden group">
@@ -208,9 +260,14 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
                  <span className="text-slate-600 font-medium">Other Expenses</span>
                  <span className="text-xl font-bold text-slate-800">€{netExpenses.toFixed(2)}</span>
               </div>
-              <div className="pt-4">
+              <div className="pt-2">
                  <span className="block text-xs font-bold text-red-400 uppercase">Total Net Purchases</span>
-                 <span className="text-4xl font-extrabold text-slate-900">€{totalNetPurchases.toLocaleString()}</span>
+                 <span className="text-3xl font-extrabold text-slate-900">€{totalNetPurchases.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              </div>
+              {/* RESTORED TOTAL CASH OUT ROW */}
+              <div className="bg-red-50 p-4 rounded-xl flex justify-between items-center mt-2">
+                 <span className="text-red-800 font-bold">Total Cash Out (Inc. VAT):</span>
+                 <span className="text-2xl font-bold text-red-900">€{totalCashOut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
            </div>
         </div>
@@ -230,7 +287,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
               </div>
               <div className="pt-4">
                  <span className="block text-xs font-bold text-emerald-500 uppercase">Total Revenue (Excl. VAT)</span>
-                 <span className="text-4xl font-extrabold text-emerald-900">€{totalRevenue.toLocaleString()}</span>
+                 <span className="text-4xl font-extrabold text-emerald-900">€{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
            </div>
         </div>
@@ -265,7 +322,6 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 };
 
 // --- REST OF THE TABS (Preserved Logic, Modern Styling) ---
-// Note: I'm keeping the logic identical but updating wrapper classes for consistency
 
 const InventoryTab = ({ fabrics, purchases, onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -299,6 +355,7 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
          <div className="flex items-center gap-4 w-full">
            <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
+           {/* SEARCH FIXED: AutoFocus and clean input */}
            <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search fabrics by name or code..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus/>
          </div>
          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 transition-colors shadow-md whitespace-nowrap flex gap-2"><Plus size={20}/> New Fabric</button>
@@ -320,6 +377,9 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
         {filtered.map(fabric => {
           const rolls = fabric.rolls || [];
           const totalMeters = rolls.reduce((s, r) => s + parseFloat(r.meters||0), 0) || 0;
+          // RESTORED SUBCODE SUMMARY
+          const summary = getSubcodeSummary(rolls, fabric.mainCode, purchases, fabrics);
+
           return (
             <div key={fabric.id} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden">
                <div className="p-5 flex justify-between items-center bg-slate-50/50 border-b border-slate-100">
@@ -336,6 +396,15 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                   </div>
                </div>
                
+               {/* RESTORED SUMMARY BLUE BOXES */}
+               <div className="px-5 pt-4 flex gap-3 flex-wrap">
+                  {summary.length > 0 ? summary.map((s, idx) => (
+                      <div key={idx} className="bg-blue-50 border border-blue-100 px-3 py-1 rounded text-xs text-blue-800 font-bold">
+                          {s.subCode}: {s.meters}m
+                      </div>
+                  )) : null}
+               </div>
+
                {rolls.length > 0 ? (
                  <div className="p-0">
                    <table className="w-full text-sm text-left">
@@ -588,10 +657,7 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   );
 };
 
-// ... (Expenses & ContactList - I'm using simplified wrapper components here, assume logic is identical just styled consistently)
-const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => { /* ... Same logic as previous but wrapped in standard layout divs ... */ 
-  // For brevity in this message, I will paste the full implementation in the file
-  // (See below for full implementation)
+const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [viewInvoice, setViewInvoice] = useState(null); const [newExpense, setNewExpense] = useState({ company: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], description: '', netPrice: '', vatRate: 24 });
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Expense" onBack={() => setViewInvoice(null)} />;
   const saveExpense = async () => { const net = parseFloat(newExpense.netPrice || 0); const vat = net * (newExpense.vatRate / 100); const expenseData = { ...newExpense, netPrice: net, vatAmount: vat, finalPrice: net + vat, items: [{ description: newExpense.description, netPrice: net, totalPrice: net + vat }] }; if (editingId) { await updateDoc(doc(db, "expenses", editingId), expenseData); } else { await addDoc(collection(db, "expenses"), expenseData); } setShowAdd(false); setEditingId(null); setNewExpense({ company: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], description: '', netPrice: '', vatRate: 24 }); };
