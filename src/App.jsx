@@ -735,12 +735,13 @@ const FabricERP = () => {
       {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
       <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto">
         <div className="p-8">
-           <div className="w-24 h-24 bg-white rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
-              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain"/>
+           {/* Removed bg-white, rounded-xl, shadow-lg. Increased img size from w-20 to w-28 */}
+           <div className="flex justify-center mx-auto mb-6">
+              <img src="/logo.png" alt="Logo" className="w-28 h-28 object-contain"/>
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.2</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.3</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
