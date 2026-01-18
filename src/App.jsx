@@ -48,8 +48,8 @@ const LoginScreen = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-900">
       <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border-t-8 border-amber-500">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-amber-600 shadow-inner">
-            <Lock size={40} />
+          <div className="w-32 h-32 mx-auto mb-4 flex items-center justify-center">
+             <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-extrabold text-slate-800">Elgrecotex ERP</h1>
           <p className="text-slate-500 text-sm mt-2 font-medium">Secure Workspace Access</p>
@@ -71,7 +71,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v2.2 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v2.3 Enterprise System</p>
       </div>
     </div>
   );
@@ -109,7 +109,11 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex justify-center">
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200" id="invoice-print">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
-           <div><h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1><p className="text-slate-500 font-medium mt-1">Premium Textiles</p></div>
+           <div>
+             <img src="/logo.png" className="h-16 mb-4 object-contain" alt="Logo"/>
+             <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
+             <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
+           </div>
            <div className="text-right"><h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type} INVOICE</h2><p className="text-slate-500 font-mono mt-1">#{invoice.invoiceNo}</p><p className="text-slate-500 text-sm">{invoice.date}</p></div>
         </div>
         <div className="grid grid-cols-2 gap-12 mb-12">
@@ -136,7 +140,11 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex justify-center">
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200" id="invoice-print">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
-           <div><h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1><p className="text-purple-600 font-bold mt-1">Elgrecotex</p></div>
+           <div>
+             <img src="/logo.png" className="h-16 mb-4 object-contain" alt="Logo"/>
+             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1>
+             <p className="text-purple-600 font-bold mt-1">Elgrecotex</p>
+           </div>
            <div className="text-right"><p className="font-mono text-lg text-slate-600">{sampleLog.date}</p><p className="text-slate-400 text-sm mt-1">Sent via: {sampleLog.carrier || 'Standard Post'}</p></div>
         </div>
         <div className="mb-12 bg-purple-50 p-6 rounded-lg border border-purple-100">
@@ -215,7 +223,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* HEADER WITH EXPORT BUTTON (RESTORED) */}
+      {/* HEADER WITH EXPORT BUTTON */}
       <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
          <div>
             <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
@@ -264,7 +272,6 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
                  <span className="block text-xs font-bold text-red-400 uppercase">Total Net Purchases</span>
                  <span className="text-3xl font-extrabold text-slate-900">€{totalNetPurchases.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
-              {/* RESTORED TOTAL CASH OUT ROW */}
               <div className="bg-red-50 p-4 rounded-xl flex justify-between items-center mt-2">
                  <span className="text-red-800 font-bold">Total Cash Out (Inc. VAT):</span>
                  <span className="text-2xl font-bold text-red-900">€{totalCashOut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
@@ -355,7 +362,6 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
          <div className="flex items-center gap-4 w-full">
            <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
-           {/* SEARCH FIXED: AutoFocus and clean input */}
            <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search fabrics by name or code..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus/>
          </div>
          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 transition-colors shadow-md whitespace-nowrap flex gap-2"><Plus size={20}/> New Fabric</button>
@@ -377,7 +383,6 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
         {filtered.map(fabric => {
           const rolls = fabric.rolls || [];
           const totalMeters = rolls.reduce((s, r) => s + parseFloat(r.meters||0), 0) || 0;
-          // RESTORED SUBCODE SUMMARY
           const summary = getSubcodeSummary(rolls, fabric.mainCode, purchases, fabrics);
 
           return (
@@ -396,7 +401,6 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                   </div>
                </div>
                
-               {/* RESTORED SUMMARY BLUE BOXES */}
                <div className="px-5 pt-4 flex gap-3 flex-wrap">
                   {summary.length > 0 ? summary.map((s, idx) => (
                       <div key={idx} className="bg-blue-50 border border-blue-100 px-3 py-1 rounded text-xs text-blue-800 font-bold">
@@ -408,11 +412,12 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                {rolls.length > 0 ? (
                  <div className="p-0">
                    <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 text-slate-500 font-semibold"><tr><th className="p-3 pl-6">Sub Code</th><th className="p-3">Description</th><th className="p-3">Meters</th><th className="p-3">Location</th><th className="p-3 text-right pr-6">Action</th></tr></thead>
+                      <thead className="bg-slate-50 text-slate-500 font-semibold"><tr><th className="p-3 pl-6">ID</th><th className="p-3">Sub Code</th><th className="p-3">Description</th><th className="p-3">Meters</th><th className="p-3">Location</th><th className="p-3 text-right pr-6">Action</th></tr></thead>
                       <tbody className="divide-y divide-slate-100">
                         {rolls.map(roll => (
                             <tr key={roll.rollId} className="hover:bg-slate-50">
-                               <td className="p-3 pl-6 font-medium text-slate-700">{roll.subCode}</td>
+                               <td className="p-3 pl-6 font-mono text-xs text-slate-400">#{roll.rollId}</td>
+                               <td className="p-3 font-medium text-slate-700">{roll.subCode}</td>
                                <td className="p-3 text-slate-500">{roll.description || '-'}</td>
                                <td className="p-3 font-bold text-slate-800">{roll.meters}m</td>
                                <td className="p-3 text-slate-500"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{roll.location}</span></td>
@@ -730,9 +735,12 @@ const FabricERP = () => {
       {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
       <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto">
         <div className="p-8">
-           <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center shadow-lg"><span className="font-bold text-white text-xl">E</span></div>
-              <div><h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1><p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise</p></div>
+           <div className="w-24 h-24 bg-white rounded-xl flex items-center justify-center shadow-lg mx-auto mb-4">
+              <img src="/logo.png" alt="Logo" className="w-20 h-20 object-contain"/>
+           </div>
+           <div className="text-center">
+              <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.2</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
