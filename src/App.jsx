@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, ExternalLink
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -71,7 +71,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v2.3 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v2.4 Enterprise System</p>
       </div>
     </div>
   );
@@ -192,7 +192,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
     try {
       const wb = XLSX.utils.book_new();
       
-      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price }))) : [];
+      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ MainCode: f.mainCode, Name: f.name, SubCode: r.subCode, RollID: r.rollId, Description: r.description || '', Meters: r.meters, Location: r.location, Price: r.price, Image: r.image || '' }))) : [];
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
       const salesData = orders.flatMap(o => (o.items || []).map(item => ({ Date: o.date, Invoice: o.invoiceNo, Customer: o.customer, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (o.vatRate/100), Total: item.totalPrice * (1 + o.vatRate/100), Status: o.status })));
@@ -328,22 +328,32 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
   );
 };
 
-// --- REST OF THE TABS (Preserved Logic, Modern Styling) ---
-
+// --- UPDATED INVENTORY TAB (WITH IMAGE LINK) ---
 const InventoryTab = ({ fabrics, purchases, onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '' });
   const [addRollOpen, setAddRollOpen] = useState(null); 
   const [editRollMode, setEditRollMode] = useState(false);
-  const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '' });
+  const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
   const filtered = fabrics.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()) || f.mainCode.includes(searchTerm));
 
   const handleAddFabric = async () => { if(newFabricData.mainCode) { await addDoc(collection(db, "fabrics"), { ...newFabricData, rolls: [] }); setNewFabricData({ mainCode: '', name: '', color: '', image: '' }); setShowAddFabric(false); }};
   const handleDeleteFabric = async (id) => { if(confirm("Delete this fabric?")) await deleteDoc(doc(db, "fabrics", id)); };
-  const openAddRoll = (fabricId) => { setAddRollOpen(fabricId); setEditRollMode(false); setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', meters: '', location: '', price: '' }); }
-  const openEditRoll = (fabricId, roll) => { setAddRollOpen(fabricId); setEditRollMode(true); setCurrentRoll(roll); }
+  
+  const openAddRoll = (fabricId) => { 
+      setAddRollOpen(fabricId); 
+      setEditRollMode(false); 
+      setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', meters: '', location: '', price: '', image: '' }); 
+  }
+  
+  const openEditRoll = (fabricId, roll) => { 
+      setAddRollOpen(fabricId); 
+      setEditRollMode(true); 
+      setCurrentRoll(roll); 
+  }
+  
   const handleSaveRoll = async (fabricId) => {
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
@@ -352,7 +362,7 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
       else { updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }]; }
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
-      setCurrentRoll({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '' });
+      setCurrentRoll({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
     }
   };
   const handleDeleteRoll = async (fabricId, rollId) => { const fabric = fabrics.find(f => f.id === fabricId); const updatedRolls = fabric.rolls.filter(r => r.rollId !== rollId); await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls }); };
@@ -412,11 +422,18 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                {rolls.length > 0 ? (
                  <div className="p-0">
                    <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 text-slate-500 font-semibold"><tr><th className="p-3 pl-6">ID</th><th className="p-3">Sub Code</th><th className="p-3">Description</th><th className="p-3">Meters</th><th className="p-3">Location</th><th className="p-3 text-right pr-6">Action</th></tr></thead>
+                      <thead className="bg-slate-50 text-slate-500 font-semibold"><tr><th className="p-3 pl-6">ID</th><th className="p-3">Img</th><th className="p-3">Sub Code</th><th className="p-3">Description</th><th className="p-3">Meters</th><th className="p-3">Location</th><th className="p-3 text-right pr-6">Action</th></tr></thead>
                       <tbody className="divide-y divide-slate-100">
                         {rolls.map(roll => (
                             <tr key={roll.rollId} className="hover:bg-slate-50">
                                <td className="p-3 pl-6 font-mono text-xs text-slate-400">#{roll.rollId}</td>
+                               <td className="p-3">
+                                  {roll.image ? (
+                                    <a href={roll.image} target="_blank" rel="noopener noreferrer" className="block w-8 h-8 rounded overflow-hidden border border-slate-200 hover:scale-110 transition-transform">
+                                      <img src={roll.image} alt="Roll" className="w-full h-full object-cover" />
+                                    </a>
+                                  ) : <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300"><ImageIcon size={14}/></div>}
+                               </td>
                                <td className="p-3 font-medium text-slate-700">{roll.subCode}</td>
                                <td className="p-3 text-slate-500">{roll.description || '-'}</td>
                                <td className="p-3 font-bold text-slate-800">{roll.meters}m</td>
@@ -436,10 +453,11 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
                  <div className="bg-emerald-50/50 p-4 border-t border-emerald-100">
                     <div className="flex gap-2 items-end">
                        <div className="w-24"><label className="text-[10px] uppercase font-bold text-slate-400">Sub Code</label><input className="w-full border p-2 rounded-lg bg-white" value={currentRoll.subCode} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} /></div>
+                       <div className="w-32"><label className="text-[10px] uppercase font-bold text-slate-400">Image Link</label><input className="w-full border p-2 rounded-lg bg-white" value={currentRoll.image} onChange={e => setCurrentRoll({...currentRoll, image: e.target.value})} placeholder="https://..." /></div>
                        <div className="flex-1"><label className="text-[10px] uppercase font-bold text-slate-400">Description</label><input className="w-full border p-2 rounded-lg bg-white" value={currentRoll.description} onChange={e => setCurrentRoll({...currentRoll, description: e.target.value})} /></div>
-                       <div className="w-24"><label className="text-[10px] uppercase font-bold text-slate-400">Meters</label><input type="number" className="w-full border p-2 rounded-lg bg-white" value={currentRoll.meters} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} /></div>
-                       <div className="w-24"><label className="text-[10px] uppercase font-bold text-slate-400">Loc</label><input className="w-full border p-2 rounded-lg bg-white" value={currentRoll.location} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} /></div>
-                       <div className="w-24"><label className="text-[10px] uppercase font-bold text-slate-400">Price</label><input type="number" className="w-full border p-2 rounded-lg bg-white" value={currentRoll.price} onChange={e => setCurrentRoll({...currentRoll, price: e.target.value})} /></div>
+                       <div className="w-20"><label className="text-[10px] uppercase font-bold text-slate-400">Meters</label><input type="number" className="w-full border p-2 rounded-lg bg-white" value={currentRoll.meters} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} /></div>
+                       <div className="w-20"><label className="text-[10px] uppercase font-bold text-slate-400">Loc</label><input className="w-full border p-2 rounded-lg bg-white" value={currentRoll.location} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} /></div>
+                       <div className="w-20"><label className="text-[10px] uppercase font-bold text-slate-400">Price</label><input type="number" className="w-full border p-2 rounded-lg bg-white" value={currentRoll.price} onChange={e => setCurrentRoll({...currentRoll, price: e.target.value})} /></div>
                        <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold h-[42px]">Save</button>
                        <button onClick={() => setAddRollOpen(null)} className="text-slate-400 px-4 py-2 font-bold h-[42px]">X</button>
                     </div>
@@ -735,13 +753,13 @@ const FabricERP = () => {
       {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
       <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto">
         <div className="p-8">
-           {/* Removed bg-white, rounded-xl, shadow-lg. Increased img size from w-20 to w-28 */}
+           {/* LOGO: No background, bigger size (w-28) */}
            <div className="flex justify-center mx-auto mb-6">
               <img src="/logo.png" alt="Logo" className="w-28 h-28 object-contain"/>
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.3</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.4</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
