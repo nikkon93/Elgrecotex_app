@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, ExternalLink
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -71,7 +71,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v2.4 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v2.5 Enterprise System</p>
       </div>
     </div>
   );
@@ -102,11 +102,17 @@ const calculateTotalWarehouseValue = (fabrics, purchases) => {
   return total;
 };
 
-// --- 4. VIEWERS ---
+// --- 4. VIEWERS (FIXED: TOP BUTTONS) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
-    <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex justify-center">
+    <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
+      {/* NEW TOP BAR FOR ACTIONS */}
+      <div className="w-full max-w-4xl mb-6 flex justify-between items-center no-print">
+          <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
+          <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+      </div>
+
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200" id="invoice-print">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
@@ -129,7 +135,6 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
            </tbody>
         </table>
         <div className="flex justify-end"><div className="w-72 space-y-3"><div className="flex justify-between text-slate-500"><span>Subtotal</span><span>€{fmt(invoice.subtotal || invoice.netPrice)}</span></div><div className="flex justify-between text-slate-500"><span>VAT ({invoice.vatRate}%)</span><span>€{fmt(invoice.vatAmount)}</span></div><div className="flex justify-between border-t border-slate-200 pt-4 text-2xl font-bold text-slate-900"><span>Total</span><span>€{fmt(invoice.finalPrice)}</span></div></div></div>
-        <div className="mt-12 pt-8 border-t no-print flex justify-between"><button onClick={onBack} className="text-slate-500 hover:text-slate-800 font-bold flex items-center gap-2"><ArrowLeft size={18}/> Back</button><button onClick={() => window.print()} className="bg-slate-800 text-white px-6 py-3 rounded-lg font-bold hover:bg-black flex items-center gap-2 shadow-lg"><Printer size={18}/> Print Document</button></div>
       </div>
     </div>
   );
@@ -137,7 +142,13 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
   return (
-    <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex justify-center">
+    <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
+      {/* NEW TOP BAR FOR ACTIONS */}
+      <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
+          <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
+          <button onClick={() => window.print()} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+      </div>
+
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200" id="invoice-print">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
            <div>
@@ -160,7 +171,6 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
               ))}
            </tbody>
         </table>
-        <div className="mt-12 pt-8 border-t no-print flex justify-between"><button onClick={onBack} className="text-slate-500 hover:text-slate-800 font-bold flex items-center gap-2"><ArrowLeft size={18}/> Back</button><button onClick={() => window.print()} className="bg-purple-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-purple-700 flex items-center gap-2 shadow-lg"><Printer size={18}/> Print Slip</button></div>
       </div>
     </div>
   );
@@ -369,12 +379,17 @@ const InventoryTab = ({ fabrics, purchases, onBack }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-         <div className="flex items-center gap-4 w-full">
-           <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
-           <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search fabrics by name or code..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus/>
+      <div className="flex justify-between items-center">
+         <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Inventory</h2><p className="text-slate-500">Manage Stock & Rolls</p></div>
          </div>
          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 transition-colors shadow-md whitespace-nowrap flex gap-2"><Plus size={20}/> New Fabric</button>
+      </div>
+
+      <div className="flex items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+         <div className="bg-slate-100 p-2 rounded-lg mr-4"><Search className="text-slate-400" size={20}/></div>
+         <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search fabrics by name or code..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus/>
       </div>
       
       {showAddFabric && (
@@ -491,7 +506,10 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div><h2 className="text-2xl font-bold text-slate-800">Sales Invoices</h2><p className="text-slate-500">Manage customer orders and billing</p></div>
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Sales Invoices</h2><p className="text-slate-500">Manage customer orders and billing</p></div>
+        </div>
         <button onClick={handleNewInvoice} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"><Plus size={20}/> New Invoice</button>
       </div>
 
@@ -573,7 +591,10 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
    return (
       <div className="space-y-6">
          <div className="flex justify-between items-center">
-            <div><h2 className="text-2xl font-bold text-slate-800">Purchases</h2><p className="text-slate-500">Track incoming stock and costs</p></div>
+            <div className="flex items-center gap-4">
+                <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+                <div><h2 className="text-2xl font-bold text-slate-800">Purchases</h2><p className="text-slate-500">Track incoming stock and costs</p></div>
+            </div>
             <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"><Plus size={20}/> New Purchase</button>
          </div>
          {showAdd && (
@@ -635,7 +656,10 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div><h2 className="text-2xl font-bold text-slate-800">Sample Shipments</h2><p className="text-slate-500">Track samples sent to prospects</p></div>
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Sample Shipments</h2><p className="text-slate-500">Track samples sent to prospects</p></div>
+        </div>
         <button onClick={() => setShowAdd(true)} className="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all flex items-center gap-2"><Plus size={20}/> New Shipment</button>
       </div>
 
@@ -687,7 +711,13 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const handleDelete = async (id) => { if(confirm("Delete this expense?")) await deleteDoc(doc(db, "expenses", id)); }
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center"><div><h2 className="text-2xl font-bold text-slate-800">Expenses</h2><p className="text-slate-500">Operational costs</p></div><button onClick={() => setShowAdd(true)} className="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-700 shadow-lg flex items-center gap-2"><Plus size={20}/> New Expense</button></div>
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Expenses</h2><p className="text-slate-500">Operational costs</p></div>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="bg-orange-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-orange-700 shadow-lg flex items-center gap-2"><Plus size={20}/> New Expense</button>
+      </div>
       {showAdd && (<div className="bg-white p-8 rounded-2xl shadow-xl border border-orange-100"><h3 className="font-bold text-lg mb-6">{editingId ? 'Edit' : 'New'} Expense</h3><div className="grid grid-cols-3 gap-6 mb-6"><div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.invoiceNo} onChange={e => setNewExpense({ ...newExpense, invoiceNo: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-400 uppercase">Company</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.company} onChange={e => setNewExpense({ ...newExpense, company: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.date} onChange={e => setNewExpense({ ...newExpense, date: e.target.value })} /></div></div><div className="flex gap-4 mb-6 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-400 uppercase">Description</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.description} onChange={e => setNewExpense({ ...newExpense, description: e.target.value })} /></div><div className="w-32"><label className="text-xs font-bold text-slate-400 uppercase">Net €</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.netPrice} onChange={e => setNewExpense({ ...newExpense, netPrice: e.target.value })} /></div><div className="w-24"><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.vatRate} onChange={e => setNewExpense({ ...newExpense, vatRate: e.target.value })} /></div></div><div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500">Cancel</button><button onClick={saveExpense} className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg">Save</button></div></div>)}
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Company</th><th className="p-4">Date</th><th className="p-4 text-right">Net</th><th className="p-4 text-right">VAT</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6"></th></tr></thead><tbody className="divide-y divide-slate-100">{expenses.filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd).map(e => (<tr key={e.id} className="hover:bg-slate-50"><td className="p-4 pl-6 font-mono text-slate-600">#{e.invoiceNo}</td><td className="p-4 font-bold text-slate-800">{e.company}</td><td className="p-4 text-slate-500">{e.date}</td><td className="p-4 text-right">€{e.netPrice.toFixed(2)}</td><td className="p-4 text-right">€{e.vatAmount.toFixed(2)}</td><td className="p-4 text-right font-bold text-slate-800">€{e.finalPrice.toFixed(2)}</td><td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewInvoice(e)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => { setNewExpense(e); setEditingId(e.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(e.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td></tr>))}</tbody></table></div>
     </div>
@@ -700,7 +730,13 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
    return (
       <div className="space-y-6">
-         <div className="flex justify-between items-center"><div><h2 className="text-2xl font-bold text-slate-800">{title}</h2><p className="text-slate-500">Manage directory</p></div><button onClick={() => setShowAdd(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-black shadow-lg flex items-center gap-2"><Plus size={20}/> Add {title}</button></div>
+         <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+                <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+                <div><h2 className="text-2xl font-bold text-slate-800">{title}</h2><p className="text-slate-500">Manage directory</p></div>
+            </div>
+            <button onClick={() => setShowAdd(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-black shadow-lg flex items-center gap-2"><Plus size={20}/> Add {title}</button>
+         </div>
          {showAdd && (<div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100"><h3 className="font-bold text-lg mb-6">{editingId ? `Edit` : `Add`} {title}</h3><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><input className="border p-3 rounded-lg bg-slate-50" placeholder="Company Name" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="VAT Number" value={newContact.vatNumber} onChange={e => setNewContact({...newContact, vatNumber: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Contact Person" value={newContact.contact} onChange={e => setNewContact({...newContact, contact: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Email" value={newContact.email} onChange={e => setNewContact({...newContact, email: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Phone" value={newContact.phone} onChange={e => setNewContact({...newContact, phone: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Address" value={newContact.address} onChange={e => setNewContact({...newContact, address: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="City" value={newContact.city} onChange={e => setNewContact({...newContact, city: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban} onChange={e => setNewContact({...newContact, iban: e.target.value})} /></div><div className="flex justify-end gap-3"><button onClick={() => { setShowAdd(false); setEditingId(null); }} className="px-6 py-3 rounded-lg font-bold text-slate-500">Cancel</button><button onClick={handleSave} className="bg-slate-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg">Save</button></div></div>)}
          <div className="bg-white border rounded-xl shadow-sm overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Company</th><th className="p-4">Contact</th><th className="p-4">Details</th><th className="p-4 text-right pr-6">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{data.map(d => (<tr key={d.id} className="hover:bg-slate-50"><td className="p-4 pl-6"><p className="font-bold text-slate-800">{d.name}</p><p className="text-xs text-slate-400">{d.vatNumber}</p></td><td className="p-4"><p className="text-slate-700">{d.contact}</p><p className="text-xs text-slate-400">{d.phone}</p></td><td className="p-4 text-slate-500 text-xs">{d.address} {d.city} {d.iban}</td><td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => { setNewContact(d); setEditingId(d.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(d.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td></tr>))}</tbody></table></div>
       </div>
@@ -759,7 +795,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.4</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v2.5</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
