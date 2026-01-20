@@ -29,6 +29,20 @@ const exportData = (data, filename, format = 'xlsx') => {
   }
 };
 
+// --- NEW: HIGHLIGHTER COMPONENT ---
+const HighlightText = ({ text, highlight }) => {
+  if (!highlight || !text) return <span>{text}</span>;
+  const parts = text.toString().split(new RegExp(`(${highlight})`, 'gi'));
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() ? 
+          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm">{part}</span> : part
+      )}
+    </span>
+  );
+};
+
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
   const [input, setInput] = useState('');
@@ -71,7 +85,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v2.7 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v2.8 Enterprise System</p>
       </div>
     </div>
   );
@@ -354,7 +368,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
   );
 };
 
-// --- INVENTORY TAB (FIXED SEARCH) ---
+// --- INVENTORY TAB (HIGHLIGHTED + FIXED SEARCH) ---
 const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -363,7 +377,7 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
   const [editRollMode, setEditRollMode] = useState(false);
   const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
-  // FIXED SEARCH: Now includes ROLL DESCRIPTION
+  // FIXED: Deep Search + Highlighter Ready
   const filtered = fabrics.filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.mainCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -438,7 +452,9 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
                   <div className="flex items-center gap-4">
                       <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center font-bold text-xl">{fabric.mainCode.substring(0,2)}</div>
                       <div>
-                        <h3 className="text-lg font-bold text-slate-800">{fabric.mainCode} - {fabric.name}</h3>
+                        <h3 className="text-lg font-bold text-slate-800">
+                            <HighlightText text={fabric.mainCode} highlight={searchTerm} /> - <HighlightText text={fabric.name} highlight={searchTerm} />
+                        </h3>
                         <p className="text-slate-500 text-sm font-medium">
                            {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
                            {fabric.color} • {rolls.length} rolls • <span className="text-blue-600">{totalMeters}m Total</span>
@@ -454,7 +470,7 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
                <div className="px-5 pt-4 flex gap-3 flex-wrap">
                   {summary.length > 0 ? summary.map((s, idx) => (
                       <div key={idx} className="bg-blue-50 border border-blue-100 px-3 py-1 rounded text-xs text-blue-800 font-bold">
-                          {s.subCode}: {s.meters}m
+                          <HighlightText text={s.subCode} highlight={searchTerm} />: {s.meters}m
                       </div>
                   )) : null}
                </div>
@@ -474,8 +490,12 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
                                     </a>
                                   ) : <div className="w-8 h-8 bg-slate-100 rounded flex items-center justify-center text-slate-300"><ImageIcon size={14}/></div>}
                                </td>
-                               <td className="p-3 font-medium text-slate-700">{roll.subCode}</td>
-                               <td className="p-3 text-slate-500">{roll.description || '-'}</td>
+                               <td className="p-3 font-medium text-slate-700">
+                                   <HighlightText text={roll.subCode} highlight={searchTerm} />
+                               </td>
+                               <td className="p-3 text-slate-500">
+                                   <HighlightText text={roll.description || '-'} highlight={searchTerm} />
+                               </td>
                                <td className="p-3 font-bold text-slate-800">{roll.meters}m</td>
                                <td className="p-3 text-slate-500"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{roll.location}</span></td>
                                <td className="p-3 text-right pr-6 flex justify-end gap-2">
@@ -510,6 +530,9 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
     </div>
   );
 };
+
+// ... (Rest of components are same as previous stable versions)
+// Repeating full file for safety to avoid copy-paste errors for user
 
 const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
@@ -665,7 +688,71 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
    )
 };
 
-// --- UPDATED EXPENSES (MULTI-ITEM SUPPORT) ---
+const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [viewLog, setViewLog] = useState(null); 
+  const [editingId, setEditingId] = useState(null); 
+  const [newLog, setNewLog] = useState({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] });
+  const [item, setItem] = useState({ fabricCode: '', description: '', meters: '' });
+
+  if (viewLog) return <SampleSlipViewer sampleLog={viewLog} onBack={() => setViewLog(null)} />;
+  const addItem = () => { if(item.fabricCode) { setNewLog({...newLog, items: [...newLog.items, item]}); setItem({ fabricCode: '', description: '', meters: '' }); }};
+  const saveLog = async () => { if (newLog.customer && newLog.items.length > 0) { if (editingId) { await updateDoc(doc(db, "samples", editingId), newLog); } else { await addDoc(collection(db, "samples"), { ...newLog, createdAt: Date.now() }); } setShowAdd(false); setEditingId(null); setNewLog({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] }); }};
+  const handleEdit = (log) => { setNewLog(log); setEditingId(log.id); setShowAdd(true); };
+  const deleteSample = async (id) => { if(confirm("Delete this log?")) await deleteDoc(doc(db, "samples", id)); };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Sample Shipments</h2><p className="text-slate-500">Track samples sent to prospects</p></div>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all flex items-center gap-2"><Plus size={20}/> New Shipment</button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-purple-100 animate-in fade-in">
+          <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Shipment' : 'Log Shipment'}</h3>
+          <div className="grid grid-cols-2 gap-6 mb-6">
+             <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newLog.date} onChange={e => setNewLog({...newLog, date: e.target.value})} /></div>
+             <div><label className="text-xs font-bold text-slate-400 uppercase">Customer (Type/Select)</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" list="customer-options" value={newLog.customer} onChange={e => setNewLog({...newLog, customer: e.target.value})} placeholder="e.g. New Lead Corp"/><datalist id="customer-options">{customers.map(c => <option key={c.id} value={c.name} />)}</datalist></div>
+             <div className="col-span-2"><label className="text-xs font-bold text-slate-400 uppercase">Notes</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" placeholder="e.g. Sent via DHL" value={newLog.notes} onChange={e => setNewLog({...newLog, notes: e.target.value})} /></div>
+          </div>
+          <div className="bg-purple-50 p-6 rounded-xl mb-6">
+             <h4 className="font-bold text-purple-800 mb-4 text-sm uppercase">Fabrics</h4>
+             <div className="flex gap-4 items-end mb-2">
+                <div className="flex-1"><label className="text-xs font-bold text-purple-400">Fabric</label><input className="w-full border p-3 rounded-lg bg-white" list="fabric-options" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Type or Select"/><datalist id="fabric-options">{fabrics.map(f => <option key={f.id} value={`${f.mainCode} - ${f.name}`} />)}</datalist></div>
+                <div className="flex-1"><label className="text-xs font-bold text-purple-400">Details</label><input className="w-full border p-3 rounded-lg bg-white" placeholder="Color / Subcode" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /></div>
+                <div className="w-24"><label className="text-xs font-bold text-purple-400">Length</label><input className="w-full border p-3 rounded-lg bg-white" placeholder="M" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} /></div>
+                <button onClick={addItem} className="bg-purple-600 text-white px-6 py-3 rounded-lg font-bold h-[50px] shadow-md">Add</button>
+             </div>
+             {newLog.items.map((i, idx) => (
+                 <div key={idx} className="flex justify-between items-center border-t border-purple-100 py-2 mt-2"><span className="font-bold text-purple-900">{i.fabricCode}</span><span className="text-purple-600">{i.description}</span><span className="text-purple-800 font-mono">{i.meters ? i.meters + 'm' : ''}</span><button onClick={() => setNewLog({...newLog, items: newLog.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></div>
+             ))}
+          </div>
+          <div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={saveLog} className="bg-purple-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-purple-700">Save Log</button></div>
+        </div>
+      )}
+
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Date</th><th className="p-4">Customer</th><th className="p-4 text-center">Items</th><th className="p-4">Notes</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {samples.length > 0 ? samples.map(s => (
+              <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+                <td className="p-4 pl-6 text-slate-500">{s.date}</td><td className="p-4 font-bold text-slate-800">{s.customer}</td><td className="p-4 text-center"><span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold">{(s.items || []).length} Fabrics</span></td><td className="p-4 text-slate-500 italic">{s.notes}</td>
+                <td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewLog(s)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => handleEdit(s)} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => deleteSample(s.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
+              </tr>
+            )) : <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No shipments logged yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -710,7 +797,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
       </div>
 
       {showAdd && (
-        <div className="bg-white p-8 rounded-2xl shadow-xl border border-orange-100">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-orange-100 animate-in fade-in">
           <h3 className="font-bold text-lg mb-6">{editingId ? 'Edit' : 'New'} Expense</h3>
           <div className="grid grid-cols-4 gap-6 mb-6">
             <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.invoiceNo} onChange={e => setNewExpense({ ...newExpense, invoiceNo: e.target.value })} /></div>
