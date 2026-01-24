@@ -42,43 +42,40 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: NUCLEAR PRINT DRIVER (Z-INDEX OVERLAY) ---
+// --- UTILITY: NUCLEAR PRINT DRIVER (VISIBILITY METHOD) ---
 const PrintStyle = () => (
   <style>{`
     @media print {
-      /* 1. Reset Root Containers */
-      html, body {
+      /* UNLOCK THE BROWSER SCROLL - FIXES THE FREEZE */
+      html, body, #root {
         height: auto !important;
         overflow: visible !important;
-        margin: 0 !important;
-        padding: 0 !important;
+        position: static !important;
       }
 
-      /* 2. Hide Everything Initially */
+      /* HIDE EVERYTHING ON SCREEN */
       body * {
         visibility: hidden;
       }
 
-      /* 3. Force Show ONLY the Print Container */
+      /* SHOW ONLY THE PRINT CONTAINER */
       .print-container, .print-container * {
         visibility: visible;
       }
 
-      /* 4. Position the Container on Top of Everything */
+      /* POSITION THE INVOICE CORRECTLY ON PAPER */
       .print-container {
-        position: fixed;
+        position: absolute;
         left: 0;
         top: 0;
-        width: 100vw;
-        height: auto;
+        width: 100%;
         margin: 0;
-        padding: 20px;
+        padding: 0;
         background: white;
-        z-index: 9999;
       }
 
-      /* 5. Hide Buttons */
-      .no-print, button, nav, aside {
+      /* HIDE BUTTONS EXPLICITLY */
+      button, .no-print {
         display: none !important;
       }
     }
@@ -142,7 +139,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.1 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.2 Enterprise System</p>
       </div>
     </div>
   );
@@ -194,16 +191,19 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS ---
+// --- 4. VIEWERS (WITH PRINT FIX) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <PrintStyle />
+      <PrintStyle /> {/* This unlocks the browser for printing */}
+      
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
           <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
+
+      {/* The 'print-container' class is CRITICAL for the visibility fix */}
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200 print-container">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
@@ -254,11 +254,13 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <PrintStyle />
+      <PrintStyle /> {/* This unlocks the browser for printing */}
+      
       <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
           <button onClick={() => window.print()} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
+
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200 print-container">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
            <div>
@@ -481,11 +483,13 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
+  // NEW: Added salePrice to state
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' });
   const [addRollOpen, setAddRollOpen] = useState(null); 
   const [editRollMode, setEditRollMode] = useState(false);
   const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
+  // FIXED: Deep Search + Highlighter Ready
   const filtered = (fabrics || []).filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.mainCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -543,6 +547,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
               <input placeholder="Main Code" className="border p-3 rounded-lg" value={newFabricData.mainCode} onChange={e => setNewFabricData({...newFabricData, mainCode: e.target.value})} />
               <input placeholder="Fabric Name" className="border p-3 rounded-lg" value={newFabricData.name} onChange={e => setNewFabricData({...newFabricData, name: e.target.value})} />
               <input placeholder="Color" className="border p-3 rounded-lg" value={newFabricData.color} onChange={e => setNewFabricData({...newFabricData, color: e.target.value})} />
+              {/* NEW: Sale Price Input */}
               <input placeholder="Sale Price (€)" type="number" className="border p-3 rounded-lg" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
            </div>
            <div className="flex gap-2"><button onClick={handleAddFabric} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button><button onClick={() => setShowAddFabric(false)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-slate-600">Cancel</button></div>
@@ -1074,14 +1079,14 @@ const FabricERP = () => {
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       
       {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
-      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto">
+      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto no-print">
         <div className="p-8">
            <div className="flex justify-center mx-auto mb-6">
               <img src="/logo.png" alt="Logo" className="w-28 h-28 object-contain"/>
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.1</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.2</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
@@ -1106,7 +1111,7 @@ const FabricERP = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         
         {/* TOP HEADER */}
-        <header className="bg-white border-b border-slate-200 h-20 px-8 flex justify-between items-center flex-shrink-0">
+        <header className="bg-white border-b border-slate-200 h-20 px-8 flex justify-between items-center flex-shrink-0 no-print">
            <div className="lg:hidden flex items-center gap-3"><div className="w-8 h-8 bg-amber-500 rounded flex items-center justify-center text-white font-bold">E</div><span className="font-bold text-slate-800">Elgrecotex</span></div>
            <div className="hidden lg:block"><h2 className="text-xl font-bold text-slate-800">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2></div>
            
@@ -1125,7 +1130,7 @@ const FabricERP = () => {
         </header>
 
         {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
            <div className="max-w-7xl mx-auto">
               {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
