@@ -42,29 +42,46 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: PRINT STYLES (FIXES THE LOADING SPINNER) ---
+// --- UTILITY: PRINT DRIVER (THE FIX FOR STUCK LOADING) ---
 const PrintStyle = () => (
   <style>{`
     @media print {
-      @page { margin: 20px; size: auto; }
-      body, html, #root { 
-        height: auto !important; 
-        overflow: visible !important; 
+      /* 1. Reset the main app containers so they don't trap the printer */
+      body, html, #root, .min-h-screen, .flex, .h-screen, .overflow-hidden {
+        height: auto !important;
+        width: auto !important;
+        overflow: visible !important;
+        position: static !important;
+        display: block !important;
         background: white !important;
       }
-      /* Hide everything else */
-      nav, aside, header, .no-print { display: none !important; }
-      /* Reset the invoice container to look like a document */
+      
+      /* 2. Hide everything by default */
+      body * {
+        visibility: hidden;
+      }
+
+      /* 3. Only show the specific print container and its children */
+      .print-container, .print-container * {
+        visibility: visible;
+      }
+
+      /* 4. Position the invoice at the very top of the paper */
       .print-container {
         position: absolute;
-        top: 0;
         left: 0;
+        top: 0;
         width: 100%;
         margin: 0;
-        padding: 0;
+        padding: 20px;
         background: white;
-        box-shadow: none !important;
         border: none !important;
+        box-shadow: none !important;
+      }
+
+      /* 5. Force hide navigation and buttons explicitly */
+      nav, aside, header, button, .no-print {
+        display: none !important;
       }
     }
   `}</style>
@@ -127,7 +144,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v3.7 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v3.8 Enterprise System</p>
       </div>
     </div>
   );
@@ -158,15 +175,14 @@ const calculateTotalWarehouseValue = (fabrics, purchases) => {
   return total;
 };
 
-// --- 4. VIEWERS (FIXED PRINTING) ---
+// --- 4. VIEWERS (WITH PRINT FIX) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <PrintStyle /> {/* INJECT PRINT STYLES */}
+      <PrintStyle /> 
       
-      {/* Buttons hidden on print */}
-      <div className="w-full max-w-4xl mb-6 flex justify-between items-center print:hidden">
+      <div className="w-full max-w-4xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
           <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
@@ -221,9 +237,9 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <PrintStyle /> {/* INJECT PRINT STYLES */}
+      <PrintStyle /> 
       
-      <div className="w-full max-w-3xl mb-6 flex justify-between items-center print:hidden">
+      <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
           <button onClick={() => window.print()} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
@@ -254,10 +270,10 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
            <tbody className="divide-y divide-slate-50">
               {(sampleLog.items || []).map((item, idx) => (
                  <tr key={idx}>
-                   <td className="py-4 px-4 font-bold text-slate-700">{item.fabricCode}</td>
-                   <td className="py-4 px-4 text-slate-500">{item.description || '-'}</td>
-                   <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-slate-50 rounded">{item.meters ? `${item.meters}m` : 'Swatch'}</td>
-                   <td className="py-4 px-4 text-right font-mono font-bold text-purple-700">{item.price ? `€${item.price}` : '-'}</td>
+                   <td className="py-4 px-4 font-bold text-slate-700">{(item || {}).fabricCode || '-'}</td>
+                   <td className="py-4 px-4 text-slate-500">{(item || {}).description || '-'}</td>
+                   <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-slate-50 rounded">{(item || {}).meters ? `${item.meters}m` : 'Swatch'}</td>
+                   <td className="py-4 px-4 text-right font-mono font-bold text-purple-700">{(item || {}).price ? `€${item.price}` : '-'}</td>
                  </tr>
               ))}
            </tbody>
@@ -964,7 +980,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v3.6</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v3.8</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
