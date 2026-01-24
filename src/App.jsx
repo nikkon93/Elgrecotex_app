@@ -74,7 +74,7 @@ const PrintStyle = () => (
         margin: 0;
         padding: 20px;
         background: white;
-        z-index: 9999; /* The Magic Number */
+        z-index: 9999;
       }
 
       /* 5. Hide Buttons */
@@ -142,7 +142,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.0 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.1 Enterprise System</p>
       </div>
     </div>
   );
@@ -152,10 +152,24 @@ const LoginScreen = ({ onLogin }) => {
 const calculateWeightedAverageCost = (mainCode, purchases = [], fabrics = []) => {
   let totalValue = 0;
   let totalMeters = 0;
-  if (purchases) purchases.forEach(p => p.items?.forEach(i => { if (i.fabricCode === mainCode) { totalValue += (parseFloat(i.meters)||0) * (parseFloat(i.pricePerMeter)||0); totalMeters += (parseFloat(i.meters)||0); }}));
-  if (fabrics) { const f = fabrics.find(x => x.mainCode === mainCode); f?.rolls?.forEach(r => { const p = parseFloat(r.price||0); if(p>0){ totalValue += (parseFloat(r.meters)||0)*p; totalMeters += (parseFloat(r.meters)||0); }}); }
+  if (purchases && Array.isArray(purchases)) {
+      purchases.forEach(p => (p.items || []).forEach(i => { 
+          if (i.fabricCode === mainCode) { 
+              totalValue += (parseFloat(i.meters)||0) * (parseFloat(i.pricePerMeter)||0); 
+              totalMeters += (parseFloat(i.meters)||0); 
+          }
+      }));
+  }
+  if (fabrics && Array.isArray(fabrics)) { 
+      const f = fabrics.find(x => x.mainCode === mainCode); 
+      (f?.rolls || []).forEach(r => { 
+          const p = parseFloat(r.price||0); 
+          if(p>0){ totalValue += (parseFloat(r.meters)||0)*p; totalMeters += (parseFloat(r.meters)||0); }
+      }); 
+  }
   return totalMeters > 0 ? totalValue / totalMeters : 0;
 };
+
 const getSubcodeSummary = (rolls, mainCode, purchases, fabrics) => {
   const summary = {};
   if(!rolls) return [];
@@ -167,24 +181,29 @@ const getSubcodeSummary = (rolls, mainCode, purchases, fabrics) => {
   });
   return Object.entries(summary).map(([subCode, data]) => ({ subCode, meters: data.meters, count: data.count, avgPrice }));
 };
-const calculateTotalWarehouseValue = (fabrics, purchases) => {
+
+const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   let total = 0;
-  fabrics.forEach(f => { const avgPrice = calculateWeightedAverageCost(f.mainCode, purchases, fabrics); f.rolls?.forEach(r => { total += (parseFloat(r.meters || 0) * (parseFloat(r.price || 0) || avgPrice)); }); });
+  if (!Array.isArray(fabrics)) return 0;
+  fabrics.forEach(f => { 
+      const avgPrice = calculateWeightedAverageCost(f.mainCode, purchases, fabrics); 
+      (f.rolls || []).forEach(r => { 
+          total += (parseFloat(r.meters || 0) * (parseFloat(r.price || 0) || avgPrice)); 
+      }); 
+  });
   return total;
 };
 
-// --- 4. VIEWERS (PRINT OVERLAY APPLIED) ---
+// --- 4. VIEWERS ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <PrintStyle />
-      
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
           <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
-
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200 print-container">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
@@ -236,12 +255,10 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <PrintStyle />
-      
       <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
           <button onClick={() => window.print()} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
-
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200 print-container">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
            <div>
@@ -281,16 +298,17 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- DASHBOARD ---
-const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers, samples, dateRangeStart, dateRangeEnd, setActiveTab }) => {
-  const totalFabrics = (fabrics || []).length;
+// --- DASHBOARD (CRASH PROOFED) ---
+const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], suppliers = [], customers = [], samples = [], dateRangeStart, dateRangeEnd, setActiveTab }) => {
+  // SAFE CALCULATIONS: Handle undefined/null gracefully
+  const totalFabrics = fabrics?.length || 0;
   const totalMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((rSum, r) => rSum + parseFloat(r.meters || 0), 0) || 0, 0);
   const totalStockValue = calculateTotalWarehouseValue(fabrics, purchases);
-  const pendingOrders = (orders||[]).filter(o => o.status === 'Pending').length;
+  const pendingOrders = (orders || []).filter(o => o.status === 'Pending').length;
 
-  const filteredPurchases = (purchases||[]).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
-  const filteredOrders = (orders||[]).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
-  const filteredExpenses = (expenses||[]).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
+  const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
+  const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
+  const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
   const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
   const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.netPrice) || 0), 0);
@@ -306,7 +324,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
     try {
       const wb = XLSX.utils.book_new();
       
-      const inventoryData = fabrics.length > 0 ? fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
+      const inventoryData = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
           Supplier: f.supplier || '', 
           MainCode: f.mainCode, 
           Name: f.name, 
@@ -318,7 +336,7 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
           Location: r.location, 
           Price: r.price, 
           Image: r.image || '' 
-      }))) : [];
+      })));
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
       const salesData = orders.flatMap(o => (o.items || []).map(item => ({ 
@@ -359,73 +377,77 @@ const Dashboard = ({ fabrics, orders, purchases, expenses, suppliers, customers,
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
-      
-      {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
-      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto no-print">
-        <div className="p-8">
-           <div className="flex justify-center mx-auto mb-6">
-              <img src="/logo.png" alt="Logo" className="w-28 h-28 object-contain"/>
-           </div>
-           <div className="text-center">
-              <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.0</p>
-           </div>
-        </div>
-        <nav className="flex-1 px-4 space-y-2">
-           <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-4">Main</p>
-           <NavItem id="dashboard" icon={Home} label="Dashboard" />
-           <NavItem id="inventory" icon={Package} label="Inventory" />
-           <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">Finance</p>
-           <NavItem id="salesinvoices" icon={FileText} label="Sales Invoices" />
-           <NavItem id="purchases" icon={BarChart3} label="Purchases" />
-           <NavItem id="expenses" icon={DollarSign} label="Expenses" />
-           <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">CRM & More</p>
-           <NavItem id="samples" icon={Tag} label="Samples" />
-           <NavItem id="customers" icon={Users} label="Customers" />
-           <NavItem id="suppliers" icon={Users} label="Suppliers" />
-        </nav>
-        <div className="p-4 mt-auto">
-           <button onClick={() => setIsAuthenticated(false)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-xl transition-colors"><LogOut size={20} /> Sign Out</button>
-        </div>
-      </aside>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+         <div>
+            <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+            <p className="text-slate-500 text-sm">Financial Overview & Actions</p>
+         </div>
+         <button onClick={exportAllData} className="bg-emerald-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
+            <Download size={18}/> Export All Data
+         </button>
+      </div>
 
-      {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        
-        {/* TOP HEADER */}
-        <header className="bg-white border-b border-slate-200 h-20 px-8 flex justify-between items-center flex-shrink-0 no-print">
-           <div className="lg:hidden flex items-center gap-3"><div className="w-8 h-8 bg-amber-500 rounded flex items-center justify-center text-white font-bold">E</div><span className="font-bold text-slate-800">Elgrecotex</span></div>
-           <div className="hidden lg:block"><h2 className="text-xl font-bold text-slate-800">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2></div>
-           
-           <div className="flex items-center gap-4">
-              <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
-                 <input type="date" value={dateRangeStart} onChange={e => setDateRangeStart(e.target.value)} className="bg-transparent text-sm font-medium px-2 py-1 outline-none text-slate-600" />
-                 <span className="text-slate-400">-</span>
-                 <input type="date" value={dateRangeEnd} onChange={e => setDateRangeEnd(e.target.value)} className="bg-transparent text-sm font-medium px-2 py-1 outline-none text-slate-600" />
-              </div>
-              <div className="h-8 w-px bg-slate-200 mx-2"></div>
-              <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center font-bold">A</div>
-                 <div className="hidden md:block"><p className="text-sm font-bold text-slate-700">Admin User</p><p className="text-xs text-slate-400">Manager</p></div>
-              </div>
-           </div>
-        </header>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <DashboardCard title="Total Fabrics" value={totalFabrics} subValue={`${Math.round(totalMeters)} meters`} icon={Package} color="blue" onClick={() => setActiveTab('inventory')} />
+        <DashboardCard title="Stock Value" value={`€${totalStockValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Warehouse Assets" icon={DollarSign} color="emerald" onClick={() => setActiveTab('inventory')} />
+        <DashboardCard title="Pending Orders" value={pendingOrders} subValue="Action Required" icon={FileText} color="amber" onClick={() => setActiveTab('salesinvoices')} />
+        <DashboardCard title="Gross Profit" value={`€${totalGrossProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Selected Period" icon={BarChart3} color={totalGrossProfit >= 0 ? "purple" : "red"} />
+      </div>
 
-        {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
-           <div className="max-w-7xl mx-auto">
-              {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
-              {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'suppliers' && <ContactList title="Suppliers" data={suppliers} collectionName="suppliers" onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'customers' && <ContactList title="Customers" data={customers} collectionName="customers" onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'samples' && <SamplesTab samples={samples} customers={customers} fabrics={fabrics} onBack={() => setActiveTab('dashboard')} />}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Quick Actions</h3>
+         <div className="flex gap-4 overflow-x-auto pb-2">
+            <button onClick={() => setActiveTab('salesinvoices')} className="flex items-center gap-3 px-5 py-3 bg-blue-50 text-blue-700 rounded-xl font-bold hover:bg-blue-100 transition-colors border border-blue-100"><Plus size={18}/> New Sale Invoice</button>
+            <button onClick={() => setActiveTab('purchases')} className="flex items-center gap-3 px-5 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold hover:bg-emerald-100 transition-colors border border-emerald-100"><Plus size={18}/> New Purchase</button>
+            <button onClick={() => setActiveTab('samples')} className="flex items-center gap-3 px-5 py-3 bg-purple-50 text-purple-700 rounded-xl font-bold hover:bg-purple-100 transition-colors border border-purple-100"><Tag size={18}/> Log Sample</button>
+            <button onClick={() => setActiveTab('inventory')} className="flex items-center gap-3 px-5 py-3 bg-slate-50 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition-colors border border-slate-200"><Search size={18}/> Search Stock</button>
+         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><BarChart3 size={100} /></div>
+           <h3 className="font-bold text-slate-500 uppercase tracking-wider mb-6">Money Out</h3>
+           <div className="space-y-6 relative z-10">
+              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                 <span className="text-slate-600 font-medium">Fabric Purchases</span>
+                 <span className="text-xl font-bold text-slate-800">€{netPurchasesFromFabrics.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                 <span className="text-slate-600 font-medium">Other Expenses</span>
+                 <span className="text-xl font-bold text-slate-800">€{netExpenses.toFixed(2)}</span>
+              </div>
+              <div className="pt-2">
+                 <span className="block text-xs font-bold text-red-400 uppercase">Total Net Purchases</span>
+                 <span className="text-3xl font-extrabold text-slate-900">€{totalNetPurchases.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              </div>
+              <div className="bg-red-50 p-4 rounded-xl flex justify-between items-center mt-2">
+                 <span className="text-red-800 font-bold">Total Cash Out (Inc. VAT):</span>
+                 <span className="text-2xl font-bold text-red-900">€{totalCashOut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              </div>
            </div>
         </div>
-      </main>
+
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden group">
+           <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><DollarSign size={100} /></div>
+           <h3 className="font-bold text-slate-500 uppercase tracking-wider mb-6">Money In</h3>
+           <div className="space-y-6 relative z-10">
+              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                 <span className="text-slate-600 font-medium">Sales Revenue</span>
+                 <span className="text-xl font-bold text-emerald-600">€{totalRevenue.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
+                 <span className="text-slate-600 font-medium">VAT Collected</span>
+                 <span className="text-xl font-bold text-slate-400">€{filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0).toFixed(2)}</span>
+              </div>
+              <div className="pt-4">
+                 <span className="block text-xs font-bold text-emerald-500 uppercase">Total Revenue (Excl. VAT)</span>
+                 <span className="text-4xl font-extrabold text-emerald-900">€{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+              </div>
+           </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -456,16 +478,14 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 };
 
 // --- INVENTORY TAB (HIGHLIGHTED + FIXED SEARCH) ---
-const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
+const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
-  // NEW: Added salePrice to state
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' });
   const [addRollOpen, setAddRollOpen] = useState(null); 
   const [editRollMode, setEditRollMode] = useState(false);
   const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
-  // FIXED: Deep Search + Highlighter Ready
   const filtered = (fabrics || []).filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.mainCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -523,7 +543,6 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
               <input placeholder="Main Code" className="border p-3 rounded-lg" value={newFabricData.mainCode} onChange={e => setNewFabricData({...newFabricData, mainCode: e.target.value})} />
               <input placeholder="Fabric Name" className="border p-3 rounded-lg" value={newFabricData.name} onChange={e => setNewFabricData({...newFabricData, name: e.target.value})} />
               <input placeholder="Color" className="border p-3 rounded-lg" value={newFabricData.color} onChange={e => setNewFabricData({...newFabricData, color: e.target.value})} />
-              {/* NEW: Sale Price Input */}
               <input placeholder="Sale Price (€)" type="number" className="border p-3 rounded-lg" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
            </div>
            <div className="flex gap-2"><button onClick={handleAddFabric} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button><button onClick={() => setShowAddFabric(false)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-slate-600">Cancel</button></div>
@@ -548,7 +567,6 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
                         <p className="text-slate-500 text-sm font-medium">
                            {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
                            {fabric.color} • {rolls.length} rolls • <span className="text-blue-600">{totalMeters}m Total</span>
-                           {/* NEW: Sale Price Display */}
                            {fabric.salePrice && <span className="text-emerald-600 font-bold ml-2 border-l pl-2 border-slate-300">Sale: €{fabric.salePrice}</span>}
                         </p>
                       </div>
@@ -623,7 +641,7 @@ const InventoryTab = ({ fabrics, purchases, suppliers, onBack }) => {
   );
 };
 
-const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
+const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
@@ -721,7 +739,7 @@ const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEn
   );
 };
 
-const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
+const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
@@ -800,7 +818,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 };
 
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
-const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
+const Expenses = ({ expenses = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
@@ -903,7 +921,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   )
 };
 
-const ContactList = ({ title, data, collectionName, onBack }) => {
+const ContactList = ({ title, data = [], collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
    const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
@@ -1063,7 +1081,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.0</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.1</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
