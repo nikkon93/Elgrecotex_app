@@ -42,49 +42,6 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: NUCLEAR PRINT DRIVER (Z-INDEX OVERLAY) ---
-const PrintStyle = () => (
-  <style>{`
-    @media print {
-      /* 1. Reset Root Containers */
-      html, body {
-        height: auto !important;
-        overflow: visible !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-
-      /* 2. Hide Everything Initially */
-      body * {
-        visibility: hidden;
-      }
-
-      /* 3. Force Show ONLY the Print Container */
-      .print-container, .print-container * {
-        visibility: visible;
-      }
-
-      /* 4. Position the Container on Top of Everything */
-      .print-container {
-        position: fixed;
-        left: 0;
-        top: 0;
-        width: 100vw;
-        height: auto;
-        margin: 0;
-        padding: 20px;
-        background: white;
-        z-index: 9999; /* The Magic Number */
-      }
-
-      /* 5. Hide Buttons */
-      .no-print, button, nav, aside {
-        display: none !important;
-      }
-    }
-  `}</style>
-);
-
 // --- COMPONENT: HIGHLIGHTER ---
 const HighlightText = ({ text, highlight }) => {
   if (!highlight || !text) return <span>{text}</span>;
@@ -100,34 +57,62 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- SPECIAL COMPONENT: PRINT LAYOUT (REMOVES APP SHELL) ---
+// --- SPECIAL COMPONENT: PRINT LAYOUT (THE FIX) ---
 const PrintLayout = ({ data, type, onCancel }) => {
   useEffect(() => {
-    // Small delay to ensure render is complete before triggering print
+    // 1. Force unlock body scroll immediately when this component mounts
+    document.body.style.overflow = 'visible';
+    document.body.style.height = 'auto';
+    document.documentElement.style.overflow = 'visible';
+    document.documentElement.style.height = 'auto';
+
+    // 2. Wait for paint, then print
     const timer = setTimeout(() => {
       window.print();
-    }, 500);
+    }, 800);
     
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // 3. Restore app-like scrolling when leaving
+      document.body.style.overflow = '';
+      document.body.style.height = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.height = '';
+    };
   }, []);
 
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
 
   return (
-    <div className="bg-white min-h-screen p-12 text-slate-800">
-      <style>{`@media print { @page { margin: 20px; } body { -webkit-print-color-adjust: exact; } }`}</style>
+    // REMOVED 'min-h-screen' to stop the browser from trying to force a height
+    <div className="bg-white p-12 text-slate-800 absolute top-0 left-0 w-full h-auto z-50">
+      {/* GLOBAL CSS OVERRIDE FOR PRINTING */}
+      <style>{`
+        @media print {
+          @page { margin: 15mm; size: auto; }
+          html, body, #root {
+            height: auto !important;
+            overflow: visible !important;
+            width: auto !important;
+            position: static !important;
+            display: block !important;
+          }
+          /* Hide the cancel button on paper */
+          .no-print { display: none !important; }
+        }
+      `}</style>
       
-      {/* Top Bar for Cancelling if print is cancelled manually */}
-      <div className="fixed top-0 left-0 w-full p-4 bg-slate-900 text-white flex justify-between items-center no-print z-50">
-        <span>Print Preview Mode</span>
-        <button onClick={onCancel} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold">Close / Cancel</button>
+      {/* Top Bar for Cancelling */}
+      <div className="fixed top-0 left-0 w-full p-4 bg-slate-900 text-white flex justify-between items-center no-print shadow-lg">
+        <span className="font-bold">Printing Mode...</span>
+        <button onClick={onCancel} className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg font-bold transition-colors">Close / Cancel</button>
       </div>
 
-      <div className="max-w-4xl mx-auto mt-16 border p-12 rounded-xl shadow-none">
+      <div className="max-w-4xl mx-auto mt-20 border p-12 rounded-xl shadow-none bg-white">
         {/* SHARED HEADER */}
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
-             <img src="/logo.png" className="h-16 mb-4 object-contain" alt="Logo"/>
+             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo"/>
              <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
              <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
            </div>
@@ -246,7 +231,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.4 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.5 Enterprise System</p>
       </div>
     </div>
   );
@@ -299,7 +284,6 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
 };
 
 // --- 4. VIEWERS (Standard Viewers for App) ---
-// NOTE: These are used when viewing inside the app. Printing uses PrintLayout above.
 const InvoiceViewer = ({ invoice, type, onBack, onPrint }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   return (
@@ -750,7 +734,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   );
 };
 
-const SalesInvoices = ({ orders, customers, fabrics, dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
@@ -1206,7 +1190,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.3</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.5</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
