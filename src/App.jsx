@@ -12,6 +12,28 @@ import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
+// --- UTILITY: EXPORT FUNCTION ---
+const exportData = (data, filename, format = 'xlsx') => {
+  try {
+    const ws = XLSX.utils.json_to_sheet(data);
+    if (format === 'csv') {
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${filename}.csv`;
+      link.click();
+    } else {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+      XLSX.writeFile(wb, `${filename}.xlsx`);
+    }
+  } catch (error) {
+    console.error("Export failed:", error);
+    alert("Export failed. Please check console.");
+  }
+};
+
 // --- UTILITY: ORDER ID GENERATOR ---
 const generateOrderId = () => {
   const now = new Date();
@@ -20,9 +42,9 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: IFRAME PRINT ENGINE (THE FINAL FIX) ---
-const handleIframePrint = (data, type) => {
-  // 1. Define the content purely as HTML string
+// --- UTILITY: BLOB PDF GENERATOR (THE FINAL FIX) ---
+const openBlobPrint = (data, type) => {
+  // 1. Prepare Data
   const isSample = type === 'samples';
   const title = isSample ? 'SAMPLE PACKING SLIP' : `${type.toUpperCase()} INVOICE`;
   const recipientLabel = isSample ? 'Prepared For' : 'Bill To';
@@ -31,111 +53,159 @@ const handleIframePrint = (data, type) => {
   const ref = data.invoiceNo ? `#${data.invoiceNo}` : (data.orderId || '');
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
 
-  // Generate Rows
+  // 2. Generate HTML Rows
   const rows = (data.items || []).map(item => `
     <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 8px;">
-        <div style="font-weight: bold; color: #333;">${item.fabricCode || item.description || '-'}</div>
-        <div style="font-size: 11px; color: #666;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
+      <td style="padding: 10px; font-size: 13px;">
+        <div style="font-weight: bold; color: #1e293b;">${item.fabricCode || item.description || '-'}</div>
+        <div style="font-size: 11px; color: #64748b;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
       </td>
-      <td style="padding: 8px; text-align: right;">${item.meters || 1}${isSample ? 'm' : ''}</td>
-      ${!isSample ? `<td style="padding: 8px; text-align: right;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
-      <td style="padding: 8px; text-align: right; font-weight: bold;">
+      <td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px;">${item.meters || 1}${isSample ? 'm' : ''}</td>
+      ${!isSample ? `<td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
+      <td style="padding: 10px; text-align: right; font-weight: bold; font-family: monospace; font-size: 13px;">
         ${isSample ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
       </td>
     </tr>
   `).join('');
 
-  // Generate Totals
+  // 3. Generate HTML Totals
   const totalsHtml = !isSample ? `
-    <div style="margin-top: 20px; text-align: right;">
-      <div style="margin-bottom: 5px;">Subtotal: <strong>€${fmt(data.subtotal || data.netPrice)}</strong></div>
-      <div style="margin-bottom: 5px;">VAT (${data.vatRate || 24}%): <strong>€${fmt(data.vatAmount)}</strong></div>
-      <div style="margin-top: 10px; font-size: 18px; font-weight: bold;">Total: €${fmt(data.finalPrice)}</div>
+    <div style="margin-top: 30px; margin-left: auto; width: 250px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #64748b;">
+        <span>Subtotal</span><span>€${fmt(data.subtotal || data.netPrice)}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #64748b;">
+        <span>VAT (${data.vatRate || 24}%)</span><span>€${fmt(data.vatAmount)}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-top: 15px; padding-top: 15px; border-top: 2px solid #e2e8f0; font-size: 16px; font-weight: bold; color: #1e293b;">
+        <span>Total</span><span>€${fmt(data.finalPrice)}</span>
+      </div>
     </div>
   ` : '';
 
-  // 2. Construct the full HTML Document
-  const docContent = `
-    <html>
-      <head>
-        <title>Print Document</title>
-        <style>
-          body { font-family: Helvetica, Arial, sans-serif; padding: 40px; color: #333; }
-          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-          table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 20px; }
-          th { text-align: left; border-bottom: 2px solid #ddd; padding: 8px; font-size: 11px; text-transform: uppercase; color: #666; }
-          .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 10px; color: #999; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
+  const notesHtml = isSample && data.notes ? `
+    <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-left: 4px solid #94a3b8; color: #475569; font-style: italic; font-size: 13px;">
+      <strong>Notes:</strong> ${data.notes}
+    </div>
+  ` : '';
+
+  // 4. Construct the Full HTML Page
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>${title} - ${ref}</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background: #52525b; padding: 40px; margin: 0; min-height: 100vh; display: flex; justify-content: center; }
+        .page { background: white; width: 210mm; min-height: 297mm; padding: 20mm; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; box-sizing: border-box; }
+        
+        /* Print Button Style */
+        .print-btn {
+          position: fixed; top: 20px; right: 20px; background: #2563eb; color: white; border: none; 
+          padding: 12px 24px; font-weight: bold; border-radius: 8px; cursor: pointer; 
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); font-size: 14px; z-index: 1000;
+          transition: transform 0.1s;
+        }
+        .print-btn:hover { transform: scale(1.05); background: #1d4ed8; }
+        .print-btn:active { transform: scale(0.95); }
+
+        .logo { height: 60px; object-fit: contain; margin-bottom: 10px; }
+        h1 { margin: 0; font-size: 24px; color: #0f172a; letter-spacing: -0.5px; }
+        h2 { margin: 0; font-size: 18px; color: #334155; text-transform: uppercase; letter-spacing: 1px; }
+        .text-sm { font-size: 12px; color: #64748b; }
+        
+        .header-row { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 40px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 40px; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 10px; border-bottom: 2px solid #e2e8f0; color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 700; }
+        
+        .footer { position: absolute; bottom: 20mm; left: 0; width: 100%; text-align: center; color: #94a3b8; font-size: 10px; }
+
+        @media print {
+          body { background: white; padding: 0; display: block; }
+          .page { width: 100%; height: auto; box-shadow: none; padding: 0; }
+          .print-btn { display: none; }
+          @page { margin: 20mm; }
+        }
+      </style>
+    </head>
+    <body>
+      <button class="print-btn" onclick="window.print()">🖨️ PRINT / SAVE AS PDF</button>
+      
+      <div class="page">
+        <div class="header-row">
           <div>
-            <h1 style="margin: 0; font-size: 24px; color: #1e293b;">Elgrecotex</h1>
-            <div style="font-size: 12px; color: #666;">Premium Textiles</div>
+            <img src="/logo.png" class="logo" alt="Logo" onerror="this.style.display='none'"/>
+            <h1>Elgrecotex</h1>
+            <div class="text-sm" style="margin-top:4px">Premium Textiles & Fabrics</div>
           </div>
           <div style="text-align: right;">
-            <h2 style="margin: 0; font-size: 18px; text-transform: uppercase;">${title}</h2>
-            <div style="font-family: monospace; margin-top: 5px;">${ref}</div>
-            <div style="font-size: 14px; margin-top: 5px;">${date}</div>
+            <h2>${title}</h2>
+            <div style="font-family: monospace; font-size: 14px; color: #475569; margin-top: 8px;">${ref}</div>
+            <div class="text-sm" style="margin-top: 4px;">${date}</div>
           </div>
         </div>
 
-        <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+        <div class="info-row">
           <div>
-            <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">${recipientLabel}</div>
-            <div style="font-size: 16px; font-weight: bold;">${recipient}</div>
-            ${data.vatNumber ? `<div style="font-size: 12px; margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
+            <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 6px;">${recipientLabel}</div>
+            <div style="font-size: 18px; font-weight: 700; color: #1e293b;">${recipient}</div>
+            ${data.vatNumber ? `<div class="text-sm" style="margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
           </div>
           <div style="text-align: right;">
-             <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: bold;">${data.status || 'Processed'}</span>
+             <span style="background: ${data.status === 'Completed' ? '#dcfce7' : '#fef3c7'}; color: ${data.status === 'Completed' ? '#166534' : '#b45309'}; padding: 6px 16px; border-radius: 99px; font-size: 12px; font-weight: 700; display: inline-block;">${data.status || 'Processed'}</span>
           </div>
         </div>
 
-        ${isSample && data.notes ? `<div style="margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #ccc;"><em>Note: ${data.notes}</em></div>` : ''}
+        ${notesHtml}
 
         <table>
           <thead>
-            <tr><th>Description</th><th style="text-align: right;">Qty</th>${!isSample ? '<th style="text-align: right;">Price</th>' : ''}<th style="text-align: right;">Total</th></tr>
+            <tr>
+              <th width="50%">Item Description</th>
+              <th width="15%" style="text-align: right;">Qty/Len</th>
+              ${!isSample ? '<th width="15%" style="text-align: right;">Price</th>' : ''}
+              <th width="20%" style="text-align: right;">${isSample ? 'Offer' : 'Total'}</th>
+            </tr>
           </thead>
-          <tbody>${rows}</tbody>
+          <tbody>
+            ${rows}
+          </tbody>
         </table>
 
         ${totalsHtml}
-        <div class="footer">Thank you for your business. | Elgrecotex</div>
-      </body>
+
+        <div class="footer">
+          Thank you for your business &bull; Elgrecotex Premium Textiles
+        </div>
+      </div>
+    </body>
     </html>
   `;
 
-  // 3. THE MAGIC: CREATE HIDDEN IFRAME AND PRINT IT
-  // Remove any existing print iframe
-  const oldIframe = document.getElementById('print-iframe');
-  if (oldIframe) oldIframe.remove();
+  // 5. Create Blob and Open in New Tab
+  // This breaks the connection to React entirely.
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+};
 
-  // Create new iframe
-  const iframe = document.createElement('iframe');
-  iframe.id = 'print-iframe';
-  iframe.style.position = 'absolute';
-  iframe.style.width = '0px';
-  iframe.style.height = '0px';
-  iframe.style.border = 'none';
-  document.body.appendChild(iframe);
-
-  // Write content
-  const doc = iframe.contentWindow.document;
-  doc.open();
-  doc.write(docContent);
-  doc.close();
-
-  // Wait for content to load, then print
-  iframe.onload = function() {
-    try {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    } catch (e) {
-      console.error("Print failed", e);
-    }
-  };
+// --- COMPONENT: HIGHLIGHTER ---
+const HighlightText = ({ text, highlight }) => {
+  if (!highlight || !text) return <span>{text}</span>;
+  const textStr = String(text); 
+  const parts = textStr.split(new RegExp(`(${highlight})`, 'gi'));
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() ? 
+          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
+      )}
+    </span>
+  );
 };
 
 // --- 2. LOGIN SCREEN ---
@@ -180,24 +250,9 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.8 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.9 Enterprise System</p>
       </div>
     </div>
-  );
-};
-
-// --- COMPONENT: HIGHLIGHTER ---
-const HighlightText = ({ text, highlight }) => {
-  if (!highlight || !text) return <span>{text}</span>;
-  const textStr = String(text); 
-  const parts = textStr.split(new RegExp(`(${highlight})`, 'gi'));
-  return (
-    <span>
-      {parts.map((part, i) => 
-        part.toLowerCase() === highlight.toLowerCase() ? 
-          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
-      )}
-    </span>
   );
 };
 
@@ -247,18 +302,18 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS (STANDARD) ---
+// --- 4. VIEWERS (Standard Viewers for App) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   
-  // NOTE: Calling Iframe printer here
-  const handlePrint = () => handleIframePrint(invoice, type);
+  // NOTE: Calling BLOB printer here
+  const handlePrint = () => openBlobPrint(invoice, type);
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
-          <button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+          <button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print / PDF</button>
       </div>
 
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
@@ -309,14 +364,14 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 };
 
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
-  // NOTE: Calling Iframe printer here
-  const handlePrint = () => handleIframePrint(sampleLog, 'samples');
+  // NOTE: Calling BLOB printer here
+  const handlePrint = () => openBlobPrint(sampleLog, 'samples');
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
-          <button onClick={handlePrint} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+          <button onClick={handlePrint} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print / PDF</button>
       </div>
 
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
@@ -803,7 +858,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
+const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
@@ -882,7 +937,7 @@ const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStar
 };
 
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
-const Expenses = ({ expenses = [], dateRangeStart, dateRangeEnd, onBack }) => {
+const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
@@ -985,7 +1040,7 @@ const Expenses = ({ expenses = [], dateRangeStart, dateRangeEnd, onBack }) => {
   )
 };
 
-const ContactList = ({ title, data = [], collectionName, onBack }) => {
+const ContactList = ({ title, data, collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
    const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
@@ -1006,7 +1061,7 @@ const ContactList = ({ title, data = [], collectionName, onBack }) => {
 };
 
 // --- UPDATED SAMPLES: SMART ROLL DROPDOWN ---
-const SamplesTab = ({ samples = [], customers = [], fabrics = [], onBack }) => {
+const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); 
   const [editingId, setEditingId] = useState(null); 
@@ -1138,14 +1193,14 @@ const FabricERP = () => {
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800">
       
       {/* SIDEBAR NAVIGATION (FIXED LEFT) */}
-      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto no-print">
+      <aside className="w-64 bg-slate-900 text-white flex-shrink-0 hidden lg:flex flex-col h-screen sticky top-0 overflow-y-auto">
         <div className="p-8">
            <div className="flex justify-center mx-auto mb-6">
               <img src="/logo.png" alt="Logo" className="w-28 h-28 object-contain"/>
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.8</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.9</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
@@ -1170,7 +1225,7 @@ const FabricERP = () => {
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
         
         {/* TOP HEADER */}
-        <header className="bg-white border-b border-slate-200 h-20 px-8 flex justify-between items-center flex-shrink-0 no-print">
+        <header className="bg-white border-b border-slate-200 h-20 px-8 flex justify-between items-center flex-shrink-0">
            <div className="lg:hidden flex items-center gap-3"><div className="w-8 h-8 bg-amber-500 rounded flex items-center justify-center text-white font-bold">E</div><span className="font-bold text-slate-800">Elgrecotex</span></div>
            <div className="hidden lg:block"><h2 className="text-xl font-bold text-slate-800">{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h2></div>
            
@@ -1189,7 +1244,7 @@ const FabricERP = () => {
         </header>
 
         {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
+        <div className="flex-1 overflow-y-auto p-8">
            <div className="max-w-7xl mx-auto">
               {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
