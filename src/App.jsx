@@ -42,6 +42,133 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
+// --- UTILITY: ISOLATED PRINT WINDOW GENERATOR (THE FIX) ---
+const openPrintWindow = (data, type) => {
+  // 1. Create a formatted HTML string purely for printing
+  // This isolates the document from the React App's CSS/Scrollbars completely.
+  
+  const isSample = type === 'samples';
+  const title = isSample ? 'SAMPLE PACKING SLIP' : `${type.toUpperCase()} INVOICE`;
+  const recipientLabel = isSample ? 'Prepared For' : 'Bill To';
+  const recipient = data.customer || data.supplier || data.company || '';
+  const date = data.date || new Date().toISOString().split('T')[0];
+  const ref = data.invoiceNo ? `#${data.invoiceNo}` : (data.orderId || '');
+  
+  const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
+
+  const rows = (data.items || []).map(item => `
+    <tr style="border-bottom: 1px solid #eee;">
+      <td style="padding: 12px 8px;">
+        <div style="font-weight: bold; color: #333;">${item.fabricCode || item.description || '-'}</div>
+        <div style="font-size: 11px; color: #666;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
+      </td>
+      <td style="padding: 12px 8px; text-align: right;">${item.meters || 1}${isSample ? 'm' : ''}</td>
+      ${!isSample ? `<td style="padding: 12px 8px; text-align: right;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
+      <td style="padding: 12px 8px; text-align: right; font-weight: bold;">
+        ${isSample ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
+      </td>
+    </tr>
+  `).join('');
+
+  const totalsHtml = !isSample ? `
+    <div style="margin-top: 20px; text-align: right;">
+      <div style="margin-bottom: 5px;">Subtotal: <strong>€${fmt(data.subtotal || data.netPrice)}</strong></div>
+      <div style="margin-bottom: 5px;">VAT (${data.vatRate || 24}%): <strong>€${fmt(data.vatAmount)}</strong></div>
+      <div style="margin-top: 10px; font-size: 18px; font-weight: bold;">Total: €${fmt(data.finalPrice)}</div>
+    </div>
+  ` : '';
+
+  const notesHtml = isSample && data.notes ? `
+    <div style="margin-top: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #ccc; font-style: italic;">
+      <strong>Notes:</strong> ${data.notes}
+    </div>
+  ` : '';
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Print - ${title}</title>
+      <style>
+        body { font-family: sans-serif; padding: 40px; color: #333; max-width: 800px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .logo-area { font-size: 24px; font-weight: bold; color: #1e293b; }
+        .invoice-info { text-align: right; }
+        .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; border-bottom: 2px solid #ddd; padding: 8px; font-size: 11px; text-transform: uppercase; color: #666; }
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 10px; color: #999; }
+        @media print {
+          @page { size: A4; margin: 20mm; }
+          body { padding: 0; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="logo-area">
+          <img src="/logo.png" style="height: 60px; display: block; margin-bottom: 10px;" alt="Logo" />
+          Elgrecotex
+        </div>
+        <div class="invoice-info">
+          <h1 style="margin: 0; font-size: 20px;">${title}</h1>
+          <div style="font-family: monospace; margin-top: 5px;">${ref}</div>
+          <div style="margin-top: 5px; font-size: 14px;">${date}</div>
+        </div>
+      </div>
+
+      <div class="info-grid">
+        <div>
+          <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">${recipientLabel}</div>
+          <div style="font-size: 16px; font-weight: bold;">${recipient}</div>
+          ${data.vatNumber ? `<div style="font-size: 12px; margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
+        </div>
+        <div style="text-align: right;">
+           <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">Status</div>
+           <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: bold;">${data.status || 'Processed'}</span>
+        </div>
+      </div>
+
+      ${notesHtml}
+
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th style="text-align: right;">Qty/Len</th>
+            ${!isSample ? '<th style="text-align: right;">Price</th>' : ''}
+            <th style="text-align: right;">${isSample ? 'Offer Price' : 'Total'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+
+      ${totalsHtml}
+
+      <div class="footer">Thank you for your business. | Elgrecotex Premium Textiles</div>
+
+      <script>
+        // Automatically trigger print when loaded
+        window.onload = function() { window.print(); }
+      </script>
+    </body>
+    </html>
+  `;
+
+  // Open the isolated window
+  const printWindow = window.open('', '_blank', 'width=900,height=800');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  } else {
+    alert("Popup blocked! Please allow popups to print.");
+  }
+};
+
 // --- COMPONENT: HIGHLIGHTER ---
 const HighlightText = ({ text, highlight }) => {
   if (!highlight || !text) return <span>{text}</span>;
@@ -54,134 +181,6 @@ const HighlightText = ({ text, highlight }) => {
           <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
       )}
     </span>
-  );
-};
-
-// --- SPECIAL COMPONENT: PRINT LAYOUT (MANUAL TRIGGER) ---
-const PrintLayout = ({ data, type, onCancel }) => {
-  
-  // NOTE: Auto-print removed to prevent freezing. 
-  // User must click "Print Now" button.
-
-  const handleManualPrint = () => {
-    window.print();
-  };
-
-  const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
-
-  return (
-    <div className="bg-white min-h-screen text-slate-800 absolute top-0 left-0 w-full z-[9999]">
-      <style>{`
-        @media print {
-          @page { margin: 10mm; size: auto; }
-          html, body, #root {
-            height: auto !important;
-            overflow: visible !important;
-            width: auto !important;
-            position: static !important;
-            display: block !important;
-            background: white !important;
-          }
-          /* Hide the top control bar on paper */
-          .print-controls { display: none !important; }
-          /* Ensure the content is visible */
-          .print-content { visibility: visible !important; }
-        }
-      `}</style>
-      
-      {/* TOP CONTROL BAR - VISIBLE ON SCREEN ONLY */}
-      <div className="print-controls fixed top-0 left-0 w-full p-4 bg-slate-800 text-white flex justify-between items-center shadow-lg z-50">
-        <div className="flex items-center gap-4">
-           <span className="font-bold text-lg">Print Preview</span>
-           <span className="text-sm text-slate-400">Review document below</span>
-        </div>
-        <div className="flex gap-4">
-           <button onClick={onCancel} className="bg-slate-600 hover:bg-slate-700 text-white px-6 py-2 rounded-lg font-bold transition-colors">Cancel</button>
-           <button onClick={handleManualPrint} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
-             <Printer size={20}/> PRINT NOW
-           </button>
-        </div>
-      </div>
-
-      {/* DOCUMENT CONTENT */}
-      <div className="print-content max-w-4xl mx-auto mt-24 border p-12 rounded-xl shadow-none bg-white">
-        {/* SHARED HEADER */}
-        <div className="flex justify-between items-start mb-12 border-b pb-8">
-           <div>
-             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo"/>
-             <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
-             <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
-           </div>
-           <div className="text-right">
-             <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type === 'samples' ? 'Sample Slip' : `${type} INVOICE`}</h2>
-             {data.invoiceNo && <p className="text-slate-500 font-mono mt-1 text-lg">#{data.invoiceNo}</p>}
-             {data.orderId && <p className="text-slate-400 text-xs mt-1 font-mono">Ref: {data.orderId}</p>}
-             <p className="text-slate-500 text-sm mt-1">{data.date}</p>
-           </div>
-        </div>
-
-        {/* BILLING INFO */}
-        <div className="grid grid-cols-2 gap-12 mb-12">
-           <div>
-             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{type === 'samples' ? 'Prepared For' : 'Bill To'}</h3>
-             <p className="text-xl font-bold text-slate-800">{data.customer || data.supplier || data.company}</p>
-             {data.vatNumber && <p className="text-sm text-slate-500 mt-1">VAT: {data.vatNumber}</p>}
-             {type === 'samples' && data.notes && <p className="text-sm text-purple-600 italic mt-2">{data.notes}</p>}
-           </div>
-           <div className="text-right">
-             {data.status && (
-               <>
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</h3>
-                <span className={`px-4 py-1 rounded-full text-sm font-bold border ${data.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{data.status}</span>
-               </>
-             )}
-           </div>
-        </div>
-
-        {/* TABLE */}
-        <table className="w-full mb-12 border-collapse">
-           <thead>
-             <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-               <th className="text-left py-3 px-4 border-b">Description / Fabric</th>
-               <th className="text-right py-3 px-4 border-b">Qty/Len</th>
-               {type !== 'samples' && <th className="text-right py-3 px-4 border-b">Price</th>}
-               <th className="text-right py-3 px-4 border-b">{type === 'samples' ? 'Offer' : 'Total'}</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-slate-100">
-              {(data.items || []).map((item, idx) => (
-                 <tr key={idx}>
-                   <td className="py-4 px-4">
-                     <p className="font-bold text-slate-700">{item.fabricCode || item.description}</p>
-                     <p className="text-xs text-slate-400">{item.subCode} {item.description !== item.fabricCode ? item.description : ''}</p>
-                   </td>
-                   <td className="py-4 px-4 text-right font-mono text-slate-600">{item.meters || 1}{type === 'samples' ? 'm' : ''}</td>
-                   {type !== 'samples' && <td className="py-4 px-4 text-right font-mono text-slate-600">€{fmt(item.pricePerMeter || item.netPrice)}</td>}
-                   <td className="py-4 px-4 text-right font-bold text-slate-800">
-                     {type === 'samples' ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
-                   </td>
-                 </tr>
-              ))}
-           </tbody>
-        </table>
-
-        {/* TOTALS (If not sample) */}
-        {type !== 'samples' && (
-          <div className="flex justify-end">
-            <div className="w-72 space-y-3">
-              <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>€{fmt(data.subtotal || data.netPrice)}</span></div>
-              <div className="flex justify-between text-slate-500"><span>VAT ({data.vatRate}%)</span><span>€{fmt(data.vatAmount)}</span></div>
-              <div className="flex justify-between border-t border-slate-200 pt-4 text-2xl font-bold text-slate-900"><span>Total</span><span>€{fmt(data.finalPrice)}</span></div>
-            </div>
-          </div>
-        )}
-        
-        {/* FOOTER */}
-        <div className="mt-16 pt-8 border-t border-slate-100 text-center text-xs text-slate-400">
-           <p>Thank you for your business. | Elgrecotex</p>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -227,7 +226,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.6 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.7 Enterprise System</p>
       </div>
     </div>
   );
@@ -279,14 +278,18 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS (Standard Viewers for App) ---
-const InvoiceViewer = ({ invoice, type, onBack, onPrint }) => {
+// --- 4. VIEWERS (App-Internal Only) ---
+const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
+  
+  // NOTE: This uses the new ISOLATED print function
+  const handlePrint = () => openPrintWindow(invoice, type);
+
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
-          <button onClick={onPrint} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+          <button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
 
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
@@ -336,12 +339,16 @@ const InvoiceViewer = ({ invoice, type, onBack, onPrint }) => {
   );
 };
 
-const SampleSlipViewer = ({ sampleLog, onBack, onPrint }) => {
+const SampleSlipViewer = ({ sampleLog, onBack }) => {
+  
+  // NOTE: This uses the new ISOLATED print function
+  const handlePrint = () => openPrintWindow(sampleLog, 'samples');
+
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
-          <button onClick={onPrint} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
+          <button onClick={handlePrint} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print</button>
       </div>
 
       <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
@@ -542,7 +549,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     blue: "bg-blue-50 text-blue-600 border-blue-100", 
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100", 
     purple: "bg-purple-50 text-purple-600 border-purple-100", 
-    amber: "bg-amber-50 text-amber-600 border-amber-100",
+    amber: "bg-amber-50 text-amber-600 border-amber-100", 
     red: "bg-red-50 text-red-600 border-red-100"
   };
   
@@ -566,13 +573,11 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
-  // NEW: Added salePrice to state
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' });
   const [addRollOpen, setAddRollOpen] = useState(null); 
   const [editRollMode, setEditRollMode] = useState(false);
   const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
-  // FIXED: Deep Search + Highlighter Ready
   const filtered = (fabrics || []).filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.mainCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -630,7 +635,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
               <input placeholder="Main Code" className="border p-3 rounded-lg" value={newFabricData.mainCode} onChange={e => setNewFabricData({...newFabricData, mainCode: e.target.value})} />
               <input placeholder="Fabric Name" className="border p-3 rounded-lg" value={newFabricData.name} onChange={e => setNewFabricData({...newFabricData, name: e.target.value})} />
               <input placeholder="Color" className="border p-3 rounded-lg" value={newFabricData.color} onChange={e => setNewFabricData({...newFabricData, color: e.target.value})} />
-              {/* NEW: Sale Price Input */}
               <input placeholder="Sale Price (€)" type="number" className="border p-3 rounded-lg" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
            </div>
            <div className="flex gap-2"><button onClick={handleAddFabric} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button><button onClick={() => setShowAddFabric(false)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-slate-600">Cancel</button></div>
@@ -655,7 +659,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                         <p className="text-slate-500 text-sm font-medium">
                            {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
                            {fabric.color} • {rolls.length} rolls • <span className="text-blue-600">{totalMeters}m Total</span>
-                           {/* NEW: Sale Price Display */}
                            {fabric.salePrice && <span className="text-emerald-600 font-bold ml-2 border-l pl-2 border-slate-300">Sale: €{fabric.salePrice}</span>}
                         </p>
                       </div>
@@ -828,7 +831,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
@@ -1010,7 +1013,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack, onPrint }) =
   )
 };
 
-const ContactList = ({ title, data = [], collectionName, onBack }) => {
+const ContactList = ({ title, data, collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
    const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
@@ -1031,7 +1034,7 @@ const ContactList = ({ title, data = [], collectionName, onBack }) => {
 };
 
 // --- UPDATED SAMPLES: SMART ROLL DROPDOWN ---
-const SamplesTab = ({ samples = [], customers = [], fabrics = [], onBack, onPrint }) => {
+const SamplesTab = ({ samples, customers, fabrics, onBack, onPrint }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); 
   const [editingId, setEditingId] = useState(null); 
@@ -1156,13 +1159,12 @@ const FabricERP = () => {
   // --- NUCLEAR PRINT MODE ---
   // If we have print data, we render ONLY the invoice. The entire app disappears.
   // This guarantees the browser print engine sees a simple, flat document.
-  if (printData) {
-    return <PrintLayout data={printData} type={printType} onCancel={() => setPrintData(null)} />;
-  }
+  // NO! The previous attempts failed because React was still controlling the layout.
+  // We remove this block entirely because openPrintWindow handles everything in a NEW WINDOW.
 
   const handlePrintRequest = (data, type) => {
-    setPrintData(data);
-    setPrintType(type);
+    // This is the new, clean, isolated print method.
+    openPrintWindow(data, type);
   };
 
   const NavItem = ({ id, icon: Icon, label }) => (
@@ -1186,7 +1188,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.6</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.7</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
