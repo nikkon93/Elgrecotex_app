@@ -4,7 +4,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -12,7 +12,7 @@ import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
-// --- UTILITY: EXPORT FUNCTION ---
+// --- UTILITY: EXPORT EXCEL ---
 const exportData = (data, filename, format = 'xlsx') => {
   try {
     const ws = XLSX.utils.json_to_sheet(data);
@@ -42,173 +42,26 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: BLOB PDF GENERATOR (SIMPLIFIED V5.0) ---
-const openBlobPrint = (data, type) => {
-  // 1. Prepare Data
-  const isSample = type === 'samples';
-  const title = isSample ? 'SAMPLE PACKING SLIP' : `${type.toUpperCase()} INVOICE`;
-  const recipientLabel = isSample ? 'Prepared For' : 'Bill To';
-  const recipient = data.customer || data.supplier || data.company || '';
-  const date = data.date || new Date().toISOString().split('T')[0];
-  const ref = data.invoiceNo ? `#${data.invoiceNo}` : (data.orderId || '');
-  const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
+// --- UTILITY: PDF DOWNLOADER (NO BROWSER PRINT) ---
+const downloadPDF = (elementId, filename) => {
+  if (!window.html2pdf) {
+    alert("PDF Engine is loading... please wait 3 seconds and try again.");
+    return;
+  }
 
-  // 2. Generate HTML Rows
-  const rows = (data.items || []).map(item => `
-    <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 10px; font-size: 13px; vertical-align: top;">
-        <div style="font-weight: bold; color: #000;">${item.fabricCode || item.description || '-'}</div>
-        <div style="font-size: 11px; color: #555;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
-      </td>
-      <td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px; vertical-align: top;">${item.meters || 1}${isSample ? 'm' : ''}</td>
-      ${!isSample ? `<td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px; vertical-align: top;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
-      <td style="padding: 10px; text-align: right; font-weight: bold; font-family: monospace; font-size: 13px; vertical-align: top;">
-        ${isSample ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
-      </td>
-    </tr>
-  `).join('');
+  const element = document.getElementById(elementId);
+  
+  // PDF Settings
+  const opt = {
+    margin:       10,
+    filename:     `${filename}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2 }, // High resolution
+    jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
 
-  // 3. Generate Totals
-  const totalsHtml = !isSample ? `
-    <div style="margin-top: 30px; margin-left: auto; width: 250px;">
-      <div style="margin-bottom: 8px; font-size: 13px; color: #555; overflow: hidden;">
-        <span style="float: left;">Subtotal</span><span style="float: right;">€${fmt(data.subtotal || data.netPrice)}</span>
-      </div>
-      <div style="margin-bottom: 8px; font-size: 13px; color: #555; overflow: hidden; clear: both;">
-        <span style="float: left;">VAT (${data.vatRate || 24}%)</span><span style="float: right;">€${fmt(data.vatAmount)}</span>
-      </div>
-      <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ccc; font-size: 16px; font-weight: bold; color: #000; overflow: hidden; clear: both;">
-        <span style="float: left;">Total</span><span style="float: right;">€${fmt(data.finalPrice)}</span>
-      </div>
-    </div>
-  ` : '';
-
-  const notesHtml = isSample && data.notes ? `
-    <div style="margin: 20px 0; padding: 15px; background: #f0f0f0; border-left: 4px solid #888; color: #444; font-style: italic; font-size: 13px;">
-      <strong>Notes:</strong> ${data.notes}
-    </div>
-  ` : '';
-
-  // 4. Construct the Full HTML Page (NO FLEXBOX, NO EXTERNAL RESOURCES)
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>${title}</title>
-      <style>
-        /* RESET & BASE */
-        body { font-family: Helvetica, Arial, sans-serif; background: #e0e0e0; padding: 40px; margin: 0; }
-        
-        /* PAGE CONTAINER - CENTERED USING MARGINS, NOT FLEX */
-        .page { 
-          background: white; 
-          width: 210mm; 
-          min-height: 297mm; 
-          padding: 20mm; 
-          margin: 0 auto; 
-          box-shadow: 0 5px 15px rgba(0,0,0,0.2); 
-          box-sizing: border-box; 
-        }
-        
-        /* HEADER LAYOUT - USING FLOATS FOR MAX COMPATIBILITY */
-        .header-row { overflow: hidden; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 40px; }
-        .logo-section { float: left; width: 50%; }
-        .info-section { float: right; width: 50%; text-align: right; }
-        
-        .logo { height: 60px; margin-bottom: 10px; }
-        h1 { margin: 0; font-size: 24px; color: #000; }
-        h2 { margin: 0; font-size: 18px; color: #333; text-transform: uppercase; }
-        .text-sm { font-size: 12px; color: #666; }
-        
-        /* INFO ROW */
-        .info-row { overflow: hidden; margin-bottom: 40px; }
-        .bill-to { float: left; width: 50%; }
-        .status-box { float: right; width: 50%; text-align: right; }
-        
-        table { width: 100%; border-collapse: collapse; clear: both; }
-        th { text-align: left; padding: 10px; border-bottom: 2px solid #ccc; color: #666; font-size: 11px; text-transform: uppercase; font-weight: bold; }
-        
-        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #888; font-size: 10px; }
-
-        /* PRINT BUTTON */
-        .print-btn-container { text-align: center; margin-bottom: 20px; }
-        .print-btn {
-          background: #000; color: white; border: none; 
-          padding: 15px 30px; font-weight: bold; border-radius: 6px; cursor: pointer; 
-          font-size: 16px; 
-        }
-        .print-btn:hover { background: #333; }
-
-        /* PRINT MEDIA QUERY - HIDE UI, RESET PAGE */
-        @media print {
-          body { background: white; padding: 0; margin: 0; }
-          .page { width: 100%; box-shadow: none; padding: 0; margin: 0; min-height: auto; }
-          .print-btn-container { display: none; }
-          @page { margin: 20mm; size: auto; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="print-btn-container">
-        <button class="print-btn" onclick="window.print()">🖨️ CLICK HERE TO PRINT / SAVE AS PDF</button>
-      </div>
-      
-      <div class="page">
-        <div class="header-row">
-          <div class="logo-section">
-            <img src="/logo.png" class="logo" alt="Logo" onerror="this.style.display='none'"/>
-            <h1>Elgrecotex</h1>
-            <div class="text-sm" style="margin-top:4px">Premium Textiles & Fabrics</div>
-          </div>
-          <div class="info-section">
-            <h2>${title}</h2>
-            <div style="font-family: monospace; font-size: 14px; color: #444; margin-top: 8px;">${ref}</div>
-            <div class="text-sm" style="margin-top: 4px;">${date}</div>
-          </div>
-        </div>
-
-        <div class="info-row">
-          <div class="bill-to">
-            <div style="font-size: 10px; text-transform: uppercase; font-weight: bold; color: #888; margin-bottom: 6px;">${recipientLabel}</div>
-            <div style="font-size: 18px; font-weight: bold; color: #000;">${recipient}</div>
-            ${data.vatNumber ? `<div class="text-sm" style="margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
-          </div>
-          <div class="status-box">
-             <span style="background: #eee; color: #333; padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; border: 1px solid #ccc;">${data.status || 'Processed'}</span>
-          </div>
-        </div>
-
-        ${notesHtml}
-
-        <table>
-          <thead>
-            <tr>
-              <th width="50%">Item Description</th>
-              <th width="15%" style="text-align: right;">Qty/Len</th>
-              ${!isSample ? '<th width="15%" style="text-align: right;">Price</th>' : ''}
-              <th width="20%" style="text-align: right;">${isSample ? 'Offer' : 'Total'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-
-        ${totalsHtml}
-
-        <div class="footer">
-          Thank you for your business &bull; Elgrecotex Premium Textiles
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-
-  // 5. Create Blob and Open in New Tab
-  const blob = new Blob([htmlContent], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  // Generate and Save (Bypasses "Preparing Preview")
+  window.html2pdf().set(opt).from(element).save();
 };
 
 // --- COMPONENT: HIGHLIGHTER ---
@@ -268,7 +121,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.0 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.1 PDF Solution</p>
       </div>
     </div>
   );
@@ -320,24 +173,27 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS (Standard Viewers for App) ---
+// --- 4. VIEWERS (With PDF Download) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
-  
-  // NOTE: Calling BLOB printer here
-  const handlePrint = () => openBlobPrint(invoice, type);
+  const pdfName = `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
-          <button onClick={handlePrint} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 flex items-center gap-2"><Printer size={18}/> Print / PDF</button>
+          
+          {/* PDF DOWNLOAD BUTTON */}
+          <button onClick={() => downloadPDF('printable-content', pdfName)} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-red-700 flex items-center gap-2 animate-bounce">
+            <FileDown size={18}/> Download PDF
+          </button>
       </div>
 
-      <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
+      {/* ID 'printable-content' is what gets converted to PDF */}
+      <div id="printable-content" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
-             <img src="/logo.png" className="h-16 mb-4 object-contain" alt="Logo"/>
+             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
              <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
              <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
            </div>
@@ -354,7 +210,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
              {invoice.status && (
                <>
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</h3>
-                <span className={`px-4 py-1 rounded-full text-sm font-bold ${invoice.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{invoice.status || 'Processed'}</span>
+                <span className={`px-4 py-1 rounded-full text-sm font-bold border ${invoice.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{invoice.status || 'Processed'}</span>
                </>
              )}
            </div>
@@ -376,26 +232,29 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
            </tbody>
         </table>
         <div className="flex justify-end"><div className="w-72 space-y-3"><div className="flex justify-between text-slate-500"><span>Subtotal</span><span>€{fmt(invoice.subtotal || invoice.netPrice)}</span></div><div className="flex justify-between text-slate-500"><span>VAT ({invoice.vatRate}%)</span><span>€{fmt(invoice.vatAmount)}</span></div><div className="flex justify-between border-t border-slate-200 pt-4 text-2xl font-bold text-slate-900"><span>Total</span><span>€{fmt(invoice.finalPrice)}</span></div></div></div>
+        
+        <div className="mt-12 text-center text-xs text-slate-400 border-t pt-4">
+           Thank you for your business.
+        </div>
       </div>
     </div>
   );
 };
 
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
-  // NOTE: Calling BLOB printer here
-  const handlePrint = () => openBlobPrint(sampleLog, 'samples');
+  const pdfName = `SampleSlip_${sampleLog.customer || 'Draft'}`;
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
-          <button onClick={handlePrint} className="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-purple-700 flex items-center gap-2"><Printer size={18}/> Print / PDF</button>
+          <button onClick={() => downloadPDF('printable-content', pdfName)} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-red-700 flex items-center gap-2 animate-bounce"><FileDown size={18}/> Download PDF</button>
       </div>
 
-      <div className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
+      <div id="printable-content" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
            <div>
-             <img src="/logo.png" className="h-16 mb-4 object-contain" alt="Logo"/>
+             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1>
              <p className="text-purple-600 font-bold mt-1">Elgrecotex</p>
            </div>
@@ -426,6 +285,9 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
               ))}
            </tbody>
         </table>
+        <div className="mt-12 text-center text-xs text-slate-400 border-t pt-4">
+           Sample Shipment Document
+        </div>
       </div>
     </div>
   );
@@ -1184,6 +1046,12 @@ const FabricERP = () => {
   const [samples, setSamples] = useState([]);
 
   useEffect(() => {
+    // Dynamically Load PDF Script
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    script.async = true;
+    document.body.appendChild(script);
+
     if (!isAuthenticated) return;
     const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => setFabrics(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -1192,7 +1060,7 @@ const FabricERP = () => {
     const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); };
+    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); document.body.removeChild(script); };
   }, [isAuthenticated]);
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
@@ -1218,7 +1086,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.0</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.1</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
