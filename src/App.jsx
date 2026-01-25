@@ -42,7 +42,7 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: BLOB PDF GENERATOR (THE FINAL FIX) ---
+// --- UTILITY: BLOB PDF GENERATOR (SIMPLIFIED V5.0) ---
 const openBlobPrint = (data, type) => {
   // 1. Prepare Data
   const isSample = type === 'samples';
@@ -56,107 +56,126 @@ const openBlobPrint = (data, type) => {
   // 2. Generate HTML Rows
   const rows = (data.items || []).map(item => `
     <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 10px; font-size: 13px;">
-        <div style="font-weight: bold; color: #1e293b;">${item.fabricCode || item.description || '-'}</div>
-        <div style="font-size: 11px; color: #64748b;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
+      <td style="padding: 10px; font-size: 13px; vertical-align: top;">
+        <div style="font-weight: bold; color: #000;">${item.fabricCode || item.description || '-'}</div>
+        <div style="font-size: 11px; color: #555;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
       </td>
-      <td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px;">${item.meters || 1}${isSample ? 'm' : ''}</td>
-      ${!isSample ? `<td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
-      <td style="padding: 10px; text-align: right; font-weight: bold; font-family: monospace; font-size: 13px;">
+      <td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px; vertical-align: top;">${item.meters || 1}${isSample ? 'm' : ''}</td>
+      ${!isSample ? `<td style="padding: 10px; text-align: right; font-family: monospace; font-size: 13px; vertical-align: top;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
+      <td style="padding: 10px; text-align: right; font-weight: bold; font-family: monospace; font-size: 13px; vertical-align: top;">
         ${isSample ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
       </td>
     </tr>
   `).join('');
 
-  // 3. Generate HTML Totals
+  // 3. Generate Totals
   const totalsHtml = !isSample ? `
     <div style="margin-top: 30px; margin-left: auto; width: 250px;">
-      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #64748b;">
-        <span>Subtotal</span><span>€${fmt(data.subtotal || data.netPrice)}</span>
+      <div style="margin-bottom: 8px; font-size: 13px; color: #555; overflow: hidden;">
+        <span style="float: left;">Subtotal</span><span style="float: right;">€${fmt(data.subtotal || data.netPrice)}</span>
       </div>
-      <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; color: #64748b;">
-        <span>VAT (${data.vatRate || 24}%)</span><span>€${fmt(data.vatAmount)}</span>
+      <div style="margin-bottom: 8px; font-size: 13px; color: #555; overflow: hidden; clear: both;">
+        <span style="float: left;">VAT (${data.vatRate || 24}%)</span><span style="float: right;">€${fmt(data.vatAmount)}</span>
       </div>
-      <div style="display: flex; justify-content: space-between; margin-top: 15px; padding-top: 15px; border-top: 2px solid #e2e8f0; font-size: 16px; font-weight: bold; color: #1e293b;">
-        <span>Total</span><span>€${fmt(data.finalPrice)}</span>
+      <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ccc; font-size: 16px; font-weight: bold; color: #000; overflow: hidden; clear: both;">
+        <span style="float: left;">Total</span><span style="float: right;">€${fmt(data.finalPrice)}</span>
       </div>
     </div>
   ` : '';
 
   const notesHtml = isSample && data.notes ? `
-    <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-left: 4px solid #94a3b8; color: #475569; font-style: italic; font-size: 13px;">
+    <div style="margin: 20px 0; padding: 15px; background: #f0f0f0; border-left: 4px solid #888; color: #444; font-style: italic; font-size: 13px;">
       <strong>Notes:</strong> ${data.notes}
     </div>
   ` : '';
 
-  // 4. Construct the Full HTML Page
+  // 4. Construct the Full HTML Page (NO FLEXBOX, NO EXTERNAL RESOURCES)
   const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>${title} - ${ref}</title>
+      <title>${title}</title>
       <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #52525b; padding: 40px; margin: 0; min-height: 100vh; display: flex; justify-content: center; }
-        .page { background: white; width: 210mm; min-height: 297mm; padding: 20mm; box-shadow: 0 10px 30px rgba(0,0,0,0.3); position: relative; box-sizing: border-box; }
+        /* RESET & BASE */
+        body { font-family: Helvetica, Arial, sans-serif; background: #e0e0e0; padding: 40px; margin: 0; }
         
-        /* Print Button Style */
-        .print-btn {
-          position: fixed; top: 20px; right: 20px; background: #2563eb; color: white; border: none; 
-          padding: 12px 24px; font-weight: bold; border-radius: 8px; cursor: pointer; 
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); font-size: 14px; z-index: 1000;
-          transition: transform 0.1s;
+        /* PAGE CONTAINER - CENTERED USING MARGINS, NOT FLEX */
+        .page { 
+          background: white; 
+          width: 210mm; 
+          min-height: 297mm; 
+          padding: 20mm; 
+          margin: 0 auto; 
+          box-shadow: 0 5px 15px rgba(0,0,0,0.2); 
+          box-sizing: border-box; 
         }
-        .print-btn:hover { transform: scale(1.05); background: #1d4ed8; }
-        .print-btn:active { transform: scale(0.95); }
+        
+        /* HEADER LAYOUT - USING FLOATS FOR MAX COMPATIBILITY */
+        .header-row { overflow: hidden; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 40px; }
+        .logo-section { float: left; width: 50%; }
+        .info-section { float: right; width: 50%; text-align: right; }
+        
+        .logo { height: 60px; margin-bottom: 10px; }
+        h1 { margin: 0; font-size: 24px; color: #000; }
+        h2 { margin: 0; font-size: 18px; color: #333; text-transform: uppercase; }
+        .text-sm { font-size: 12px; color: #666; }
+        
+        /* INFO ROW */
+        .info-row { overflow: hidden; margin-bottom: 40px; }
+        .bill-to { float: left; width: 50%; }
+        .status-box { float: right; width: 50%; text-align: right; }
+        
+        table { width: 100%; border-collapse: collapse; clear: both; }
+        th { text-align: left; padding: 10px; border-bottom: 2px solid #ccc; color: #666; font-size: 11px; text-transform: uppercase; font-weight: bold; }
+        
+        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #888; font-size: 10px; }
 
-        .logo { height: 60px; object-fit: contain; margin-bottom: 10px; }
-        h1 { margin: 0; font-size: 24px; color: #0f172a; letter-spacing: -0.5px; }
-        h2 { margin: 0; font-size: 18px; color: #334155; text-transform: uppercase; letter-spacing: 1px; }
-        .text-sm { font-size: 12px; color: #64748b; }
-        
-        .header-row { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 40px; }
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 40px; }
-        
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 10px; border-bottom: 2px solid #e2e8f0; color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 700; }
-        
-        .footer { position: absolute; bottom: 20mm; left: 0; width: 100%; text-align: center; color: #94a3b8; font-size: 10px; }
+        /* PRINT BUTTON */
+        .print-btn-container { text-align: center; margin-bottom: 20px; }
+        .print-btn {
+          background: #000; color: white; border: none; 
+          padding: 15px 30px; font-weight: bold; border-radius: 6px; cursor: pointer; 
+          font-size: 16px; 
+        }
+        .print-btn:hover { background: #333; }
 
+        /* PRINT MEDIA QUERY - HIDE UI, RESET PAGE */
         @media print {
-          body { background: white; padding: 0; display: block; }
-          .page { width: 100%; height: auto; box-shadow: none; padding: 0; }
-          .print-btn { display: none; }
-          @page { margin: 20mm; }
+          body { background: white; padding: 0; margin: 0; }
+          .page { width: 100%; box-shadow: none; padding: 0; margin: 0; min-height: auto; }
+          .print-btn-container { display: none; }
+          @page { margin: 20mm; size: auto; }
         }
       </style>
     </head>
     <body>
-      <button class="print-btn" onclick="window.print()">🖨️ PRINT / SAVE AS PDF</button>
+      <div class="print-btn-container">
+        <button class="print-btn" onclick="window.print()">🖨️ CLICK HERE TO PRINT / SAVE AS PDF</button>
+      </div>
       
       <div class="page">
         <div class="header-row">
-          <div>
+          <div class="logo-section">
             <img src="/logo.png" class="logo" alt="Logo" onerror="this.style.display='none'"/>
             <h1>Elgrecotex</h1>
             <div class="text-sm" style="margin-top:4px">Premium Textiles & Fabrics</div>
           </div>
-          <div style="text-align: right;">
+          <div class="info-section">
             <h2>${title}</h2>
-            <div style="font-family: monospace; font-size: 14px; color: #475569; margin-top: 8px;">${ref}</div>
+            <div style="font-family: monospace; font-size: 14px; color: #444; margin-top: 8px;">${ref}</div>
             <div class="text-sm" style="margin-top: 4px;">${date}</div>
           </div>
         </div>
 
         <div class="info-row">
-          <div>
-            <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 6px;">${recipientLabel}</div>
-            <div style="font-size: 18px; font-weight: 700; color: #1e293b;">${recipient}</div>
+          <div class="bill-to">
+            <div style="font-size: 10px; text-transform: uppercase; font-weight: bold; color: #888; margin-bottom: 6px;">${recipientLabel}</div>
+            <div style="font-size: 18px; font-weight: bold; color: #000;">${recipient}</div>
             ${data.vatNumber ? `<div class="text-sm" style="margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
           </div>
-          <div style="text-align: right;">
-             <span style="background: ${data.status === 'Completed' ? '#dcfce7' : '#fef3c7'}; color: ${data.status === 'Completed' ? '#166534' : '#b45309'}; padding: 6px 16px; border-radius: 99px; font-size: 12px; font-weight: 700; display: inline-block;">${data.status || 'Processed'}</span>
+          <div class="status-box">
+             <span style="background: #eee; color: #333; padding: 6px 16px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; border: 1px solid #ccc;">${data.status || 'Processed'}</span>
           </div>
         </div>
 
@@ -187,7 +206,6 @@ const openBlobPrint = (data, type) => {
   `;
 
   // 5. Create Blob and Open in New Tab
-  // This breaks the connection to React entirely.
   const blob = new Blob([htmlContent], { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
@@ -250,7 +268,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.9 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.0 Enterprise System</p>
       </div>
     </div>
   );
@@ -1200,7 +1218,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.9</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.0</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
@@ -1244,7 +1262,7 @@ const FabricERP = () => {
         </header>
 
         {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
            <div className="max-w-7xl mx-auto">
               {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
