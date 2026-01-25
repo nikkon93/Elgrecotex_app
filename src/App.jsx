@@ -12,28 +12,6 @@ import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
-// --- UTILITY: EXPORT FUNCTION ---
-const exportData = (data, filename, format = 'xlsx') => {
-  try {
-    const ws = XLSX.utils.json_to_sheet(data);
-    if (format === 'csv') {
-      const csv = XLSX.utils.sheet_to_csv(ws);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${filename}.csv`;
-      link.click();
-    } else {
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-      XLSX.writeFile(wb, `${filename}.xlsx`);
-    }
-  } catch (error) {
-    console.error("Export failed:", error);
-    alert("Export failed. Please check console.");
-  }
-};
-
 // --- UTILITY: ORDER ID GENERATOR ---
 const generateOrderId = () => {
   const now = new Date();
@@ -42,34 +20,33 @@ const generateOrderId = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// --- UTILITY: ISOLATED PRINT WINDOW GENERATOR (THE FIX) ---
-const openPrintWindow = (data, type) => {
-  // 1. Create a formatted HTML string purely for printing
-  // This isolates the document from the React App's CSS/Scrollbars completely.
-  
+// --- UTILITY: IFRAME PRINT ENGINE (THE FINAL FIX) ---
+const handleIframePrint = (data, type) => {
+  // 1. Define the content purely as HTML string
   const isSample = type === 'samples';
   const title = isSample ? 'SAMPLE PACKING SLIP' : `${type.toUpperCase()} INVOICE`;
   const recipientLabel = isSample ? 'Prepared For' : 'Bill To';
   const recipient = data.customer || data.supplier || data.company || '';
   const date = data.date || new Date().toISOString().split('T')[0];
   const ref = data.invoiceNo ? `#${data.invoiceNo}` : (data.orderId || '');
-  
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
 
+  // Generate Rows
   const rows = (data.items || []).map(item => `
     <tr style="border-bottom: 1px solid #eee;">
-      <td style="padding: 12px 8px;">
+      <td style="padding: 8px;">
         <div style="font-weight: bold; color: #333;">${item.fabricCode || item.description || '-'}</div>
         <div style="font-size: 11px; color: #666;">${item.subCode || ''} ${item.description && item.description !== item.fabricCode ? item.description : ''}</div>
       </td>
-      <td style="padding: 12px 8px; text-align: right;">${item.meters || 1}${isSample ? 'm' : ''}</td>
-      ${!isSample ? `<td style="padding: 12px 8px; text-align: right;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
-      <td style="padding: 12px 8px; text-align: right; font-weight: bold;">
+      <td style="padding: 8px; text-align: right;">${item.meters || 1}${isSample ? 'm' : ''}</td>
+      ${!isSample ? `<td style="padding: 8px; text-align: right;">€${fmt(item.pricePerMeter || item.netPrice)}</td>` : ''}
+      <td style="padding: 8px; text-align: right; font-weight: bold;">
         ${isSample ? (item.price ? `€${item.price}` : '-') : `€${fmt(item.totalPrice || item.finalPrice)}`}
       </td>
     </tr>
   `).join('');
 
+  // Generate Totals
   const totalsHtml = !isSample ? `
     <div style="margin-top: 20px; text-align: right;">
       <div style="margin-bottom: 5px;">Subtotal: <strong>€${fmt(data.subtotal || data.netPrice)}</strong></div>
@@ -78,110 +55,87 @@ const openPrintWindow = (data, type) => {
     </div>
   ` : '';
 
-  const notesHtml = isSample && data.notes ? `
-    <div style="margin-top: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #ccc; font-style: italic;">
-      <strong>Notes:</strong> ${data.notes}
-    </div>
-  ` : '';
-
-  const htmlContent = `
-    <!DOCTYPE html>
+  // 2. Construct the full HTML Document
+  const docContent = `
     <html>
-    <head>
-      <title>Print - ${title}</title>
-      <style>
-        body { font-family: sans-serif; padding: 40px; color: #333; max-width: 800px; margin: 0 auto; }
-        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-        .logo-area { font-size: 24px; font-weight: bold; color: #1e293b; }
-        .invoice-info { text-align: right; }
-        .info-grid { display: flex; justify-content: space-between; margin-bottom: 40px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; border-bottom: 2px solid #ddd; padding: 8px; font-size: 11px; text-transform: uppercase; color: #666; }
-        .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 10px; color: #999; }
-        @media print {
-          @page { size: A4; margin: 20mm; }
-          body { padding: 0; }
-          .no-print { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="logo-area">
-          <img src="/logo.png" style="height: 60px; display: block; margin-bottom: 10px;" alt="Logo" />
-          Elgrecotex
+      <head>
+        <title>Print Document</title>
+        <style>
+          body { font-family: Helvetica, Arial, sans-serif; padding: 40px; color: #333; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 20px; }
+          th { text-align: left; border-bottom: 2px solid #ddd; padding: 8px; font-size: 11px; text-transform: uppercase; color: #666; }
+          .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 10px; color: #999; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1 style="margin: 0; font-size: 24px; color: #1e293b;">Elgrecotex</h1>
+            <div style="font-size: 12px; color: #666;">Premium Textiles</div>
+          </div>
+          <div style="text-align: right;">
+            <h2 style="margin: 0; font-size: 18px; text-transform: uppercase;">${title}</h2>
+            <div style="font-family: monospace; margin-top: 5px;">${ref}</div>
+            <div style="font-size: 14px; margin-top: 5px;">${date}</div>
+          </div>
         </div>
-        <div class="invoice-info">
-          <h1 style="margin: 0; font-size: 20px;">${title}</h1>
-          <div style="font-family: monospace; margin-top: 5px;">${ref}</div>
-          <div style="margin-top: 5px; font-size: 14px;">${date}</div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+          <div>
+            <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">${recipientLabel}</div>
+            <div style="font-size: 16px; font-weight: bold;">${recipient}</div>
+            ${data.vatNumber ? `<div style="font-size: 12px; margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
+          </div>
+          <div style="text-align: right;">
+             <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: bold;">${data.status || 'Processed'}</span>
+          </div>
         </div>
-      </div>
 
-      <div class="info-grid">
-        <div>
-          <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">${recipientLabel}</div>
-          <div style="font-size: 16px; font-weight: bold;">${recipient}</div>
-          ${data.vatNumber ? `<div style="font-size: 12px; margin-top: 4px;">VAT: ${data.vatNumber}</div>` : ''}
-        </div>
-        <div style="text-align: right;">
-           <div style="font-size: 10px; text-transform: uppercase; color: #888; font-weight: bold; margin-bottom: 5px;">Status</div>
-           <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: bold;">${data.status || 'Processed'}</span>
-        </div>
-      </div>
+        ${isSample && data.notes ? `<div style="margin-bottom: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #ccc;"><em>Note: ${data.notes}</em></div>` : ''}
 
-      ${notesHtml}
+        <table>
+          <thead>
+            <tr><th>Description</th><th style="text-align: right;">Qty</th>${!isSample ? '<th style="text-align: right;">Price</th>' : ''}<th style="text-align: right;">Total</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Description</th>
-            <th style="text-align: right;">Qty/Len</th>
-            ${!isSample ? '<th style="text-align: right;">Price</th>' : ''}
-            <th style="text-align: right;">${isSample ? 'Offer Price' : 'Total'}</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-
-      ${totalsHtml}
-
-      <div class="footer">Thank you for your business. | Elgrecotex Premium Textiles</div>
-
-      <script>
-        // Automatically trigger print when loaded
-        window.onload = function() { window.print(); }
-      </script>
-    </body>
+        ${totalsHtml}
+        <div class="footer">Thank you for your business. | Elgrecotex</div>
+      </body>
     </html>
   `;
 
-  // Open the isolated window
-  const printWindow = window.open('', '_blank', 'width=900,height=800');
-  if (printWindow) {
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-  } else {
-    alert("Popup blocked! Please allow popups to print.");
-  }
-};
+  // 3. THE MAGIC: CREATE HIDDEN IFRAME AND PRINT IT
+  // Remove any existing print iframe
+  const oldIframe = document.getElementById('print-iframe');
+  if (oldIframe) oldIframe.remove();
 
-// --- COMPONENT: HIGHLIGHTER ---
-const HighlightText = ({ text, highlight }) => {
-  if (!highlight || !text) return <span>{text}</span>;
-  const textStr = String(text); 
-  const parts = textStr.split(new RegExp(`(${highlight})`, 'gi'));
-  return (
-    <span>
-      {parts.map((part, i) => 
-        part.toLowerCase() === highlight.toLowerCase() ? 
-          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
-      )}
-    </span>
-  );
+  // Create new iframe
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-iframe';
+  iframe.style.position = 'absolute';
+  iframe.style.width = '0px';
+  iframe.style.height = '0px';
+  iframe.style.border = 'none';
+  document.body.appendChild(iframe);
+
+  // Write content
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(docContent);
+  doc.close();
+
+  // Wait for content to load, then print
+  iframe.onload = function() {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.error("Print failed", e);
+    }
+  };
 };
 
 // --- 2. LOGIN SCREEN ---
@@ -226,9 +180,24 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.7 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.8 Enterprise System</p>
       </div>
     </div>
+  );
+};
+
+// --- COMPONENT: HIGHLIGHTER ---
+const HighlightText = ({ text, highlight }) => {
+  if (!highlight || !text) return <span>{text}</span>;
+  const textStr = String(text); 
+  const parts = textStr.split(new RegExp(`(${highlight})`, 'gi'));
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() ? 
+          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
+      )}
+    </span>
   );
 };
 
@@ -278,12 +247,12 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS (App-Internal Only) ---
+// --- 4. VIEWERS (STANDARD) ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   
-  // NOTE: This uses the new ISOLATED print function
-  const handlePrint = () => openPrintWindow(invoice, type);
+  // NOTE: Calling Iframe printer here
+  const handlePrint = () => handleIframePrint(invoice, type);
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
@@ -340,9 +309,8 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
 };
 
 const SampleSlipViewer = ({ sampleLog, onBack }) => {
-  
-  // NOTE: This uses the new ISOLATED print function
-  const handlePrint = () => openPrintWindow(sampleLog, 'samples');
+  // NOTE: Calling Iframe printer here
+  const handlePrint = () => handleIframePrint(sampleLog, 'samples');
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
@@ -549,7 +517,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     blue: "bg-blue-50 text-blue-600 border-blue-100", 
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100", 
     purple: "bg-purple-50 text-purple-600 border-purple-100", 
-    amber: "bg-amber-50 text-amber-600 border-amber-100", 
+    amber: "bg-amber-50 text-amber-600 border-amber-100",
     red: "bg-red-50 text-red-600 border-red-100"
   };
   
@@ -573,11 +541,13 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
+  // NEW: Added salePrice to state
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' });
   const [addRollOpen, setAddRollOpen] = useState(null); 
   const [editRollMode, setEditRollMode] = useState(false);
   const [currentRoll, setCurrentRoll] = useState({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
 
+  // FIXED: Deep Search + Highlighter Ready
   const filtered = (fabrics || []).filter(f => 
     f.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     f.mainCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -635,6 +605,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
               <input placeholder="Main Code" className="border p-3 rounded-lg" value={newFabricData.mainCode} onChange={e => setNewFabricData({...newFabricData, mainCode: e.target.value})} />
               <input placeholder="Fabric Name" className="border p-3 rounded-lg" value={newFabricData.name} onChange={e => setNewFabricData({...newFabricData, name: e.target.value})} />
               <input placeholder="Color" className="border p-3 rounded-lg" value={newFabricData.color} onChange={e => setNewFabricData({...newFabricData, color: e.target.value})} />
+              {/* NEW: Sale Price Input */}
               <input placeholder="Sale Price (€)" type="number" className="border p-3 rounded-lg" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
            </div>
            <div className="flex gap-2"><button onClick={handleAddFabric} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button><button onClick={() => setShowAddFabric(false)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-slate-600">Cancel</button></div>
@@ -659,6 +630,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                         <p className="text-slate-500 text-sm font-medium">
                            {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
                            {fabric.color} • {rolls.length} rolls • <span className="text-blue-600">{totalMeters}m Total</span>
+                           {/* NEW: Sale Price Display */}
                            {fabric.salePrice && <span className="text-emerald-600 font-bold ml-2 border-l pl-2 border-slate-300">Sale: €{fabric.salePrice}</span>}
                         </p>
                       </div>
@@ -733,7 +705,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   );
 };
 
-const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
@@ -741,7 +713,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
   const selectedFabric = fabrics.find(f => f.mainCode === item.fabricCode);
 
-  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} onPrint={() => onPrint(viewInvoice, 'Sales')} />;
+  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
 
   const handleNewInvoice = () => { 
       setNewOrder({ 
@@ -831,14 +803,14 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
    const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
    const [item, setItem] = useState({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' });
 
-   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} onPrint={() => onPrint(viewInvoice, 'Purchase')} />;
+   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
    const addItem = () => { if(item.fabricCode && item.meters && item.pricePerMeter) { const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewPurchase({...newPurchase, items: [...newPurchase.items, { ...item, totalPrice: total }] }); setItem({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' }); }};
    const savePurchase = async () => {
       const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
@@ -910,14 +882,14 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 };
 
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
-const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const Expenses = ({ expenses = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [newExpense, setNewExpense] = useState({ company: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
   const [currentItem, setCurrentItem] = useState({ description: '', netPrice: '' });
 
-  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Expense" onBack={() => setViewInvoice(null)} onPrint={() => onPrint(viewInvoice, 'Expense')} />;
+  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Expense" onBack={() => setViewInvoice(null)} />;
 
   const addItem = () => {
       if (currentItem.description && currentItem.netPrice) {
@@ -1013,7 +985,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack, onPrint }) =
   )
 };
 
-const ContactList = ({ title, data, collectionName, onBack }) => {
+const ContactList = ({ title, data = [], collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
    const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
@@ -1034,7 +1006,7 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
 };
 
 // --- UPDATED SAMPLES: SMART ROLL DROPDOWN ---
-const SamplesTab = ({ samples, customers, fabrics, onBack, onPrint }) => {
+const SamplesTab = ({ samples = [], customers = [], fabrics = [], onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); 
   const [editingId, setEditingId] = useState(null); 
@@ -1042,7 +1014,7 @@ const SamplesTab = ({ samples, customers, fabrics, onBack, onPrint }) => {
   // NEW: Added price to item state
   const [item, setItem] = useState({ fabricCode: '', description: '', meters: '', price: '' });
 
-  if (viewLog) return <SampleSlipViewer sampleLog={viewLog} onBack={() => setViewLog(null)} onPrint={() => onPrint(viewLog, 'samples')} />;
+  if (viewLog) return <SampleSlipViewer sampleLog={viewLog} onBack={() => setViewLog(null)} />;
   
   const addItem = () => { if(item.fabricCode) { setNewLog({...newLog, items: [...newLog.items, item]}); setItem({ fabricCode: '', description: '', meters: '', price: '' }); }};
   const saveLog = async () => { if (newLog.customer && newLog.items.length > 0) { if (editingId) { await updateDoc(doc(db, "samples", editingId), newLog); } else { await addDoc(collection(db, "samples"), { ...newLog, createdAt: Date.now() }); } setShowAdd(false); setEditingId(null); setNewLog({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] }); }};
@@ -1128,10 +1100,6 @@ const FabricERP = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dateRangeStart, setDateRangeStart] = useState('2025-01-01');
   const [dateRangeEnd, setDateRangeEnd] = useState('2027-12-31');
-  
-  // PRINT STATE (The Nuclear Fix)
-  const [printData, setPrintData] = useState(null);
-  const [printType, setPrintType] = useState('');
 
   // FIREBASE STATES
   const [fabrics, setFabrics] = useState([]);
@@ -1156,17 +1124,6 @@ const FabricERP = () => {
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
 
-  // --- NUCLEAR PRINT MODE ---
-  // If we have print data, we render ONLY the invoice. The entire app disappears.
-  // This guarantees the browser print engine sees a simple, flat document.
-  // NO! The previous attempts failed because React was still controlling the layout.
-  // We remove this block entirely because openPrintWindow handles everything in a NEW WINDOW.
-
-  const handlePrintRequest = (data, type) => {
-    // This is the new, clean, isolated print method.
-    openPrintWindow(data, type);
-  };
-
   const NavItem = ({ id, icon: Icon, label }) => (
     <button 
       onClick={() => setActiveTab(id)} 
@@ -1188,7 +1145,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.7</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.8</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
@@ -1236,12 +1193,12 @@ const FabricERP = () => {
            <div className="max-w-7xl mx-auto">
               {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} onPrint={handlePrintRequest} />}
-              {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} onPrint={handlePrintRequest} />}
-              {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} onPrint={handlePrintRequest} />}
+              {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
+              {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
+              {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'suppliers' && <ContactList title="Suppliers" data={suppliers} collectionName="suppliers" onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'customers' && <ContactList title="Customers" data={customers} collectionName="customers" onBack={() => setActiveTab('dashboard')} />}
-              {activeTab === 'samples' && <SamplesTab samples={samples} customers={customers} fabrics={fabrics} onBack={() => setActiveTab('dashboard')} onPrint={handlePrintRequest} />}
+              {activeTab === 'samples' && <SamplesTab samples={samples} customers={customers} fabrics={fabrics} onBack={() => setActiveTab('dashboard')} />}
            </div>
         </div>
       </main>
