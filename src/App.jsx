@@ -57,58 +57,54 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- SPECIAL COMPONENT: PRINT LAYOUT (THE FIX) ---
+// --- SPECIAL COMPONENT: PRINT LAYOUT (MANUAL TRIGGER) ---
 const PrintLayout = ({ data, type, onCancel }) => {
-  useEffect(() => {
-    // 1. Force unlock body scroll immediately when this component mounts
-    document.body.style.overflow = 'visible';
-    document.body.style.height = 'auto';
-    document.documentElement.style.overflow = 'visible';
-    document.documentElement.style.height = 'auto';
+  
+  // NOTE: Auto-print removed to prevent freezing. 
+  // User must click "Print Now" button.
 
-    // 2. Wait for paint, then print
-    const timer = setTimeout(() => {
-      window.print();
-    }, 800);
-    
-    return () => {
-      clearTimeout(timer);
-      // 3. Restore app-like scrolling when leaving
-      document.body.style.overflow = '';
-      document.body.style.height = '';
-      document.documentElement.style.overflow = '';
-      document.documentElement.style.height = '';
-    };
-  }, []);
+  const handleManualPrint = () => {
+    window.print();
+  };
 
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
 
   return (
-    // REMOVED 'min-h-screen' to stop the browser from trying to force a height
-    <div className="bg-white p-12 text-slate-800 absolute top-0 left-0 w-full h-auto z-50">
-      {/* GLOBAL CSS OVERRIDE FOR PRINTING */}
+    <div className="bg-white min-h-screen text-slate-800 absolute top-0 left-0 w-full z-[9999]">
       <style>{`
         @media print {
-          @page { margin: 15mm; size: auto; }
+          @page { margin: 10mm; size: auto; }
           html, body, #root {
             height: auto !important;
             overflow: visible !important;
             width: auto !important;
             position: static !important;
             display: block !important;
+            background: white !important;
           }
-          /* Hide the cancel button on paper */
-          .no-print { display: none !important; }
+          /* Hide the top control bar on paper */
+          .print-controls { display: none !important; }
+          /* Ensure the content is visible */
+          .print-content { visibility: visible !important; }
         }
       `}</style>
       
-      {/* Top Bar for Cancelling */}
-      <div className="fixed top-0 left-0 w-full p-4 bg-slate-900 text-white flex justify-between items-center no-print shadow-lg">
-        <span className="font-bold">Printing Mode...</span>
-        <button onClick={onCancel} className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg font-bold transition-colors">Close / Cancel</button>
+      {/* TOP CONTROL BAR - VISIBLE ON SCREEN ONLY */}
+      <div className="print-controls fixed top-0 left-0 w-full p-4 bg-slate-800 text-white flex justify-between items-center shadow-lg z-50">
+        <div className="flex items-center gap-4">
+           <span className="font-bold text-lg">Print Preview</span>
+           <span className="text-sm text-slate-400">Review document below</span>
+        </div>
+        <div className="flex gap-4">
+           <button onClick={onCancel} className="bg-slate-600 hover:bg-slate-700 text-white px-6 py-2 rounded-lg font-bold transition-colors">Cancel</button>
+           <button onClick={handleManualPrint} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
+             <Printer size={20}/> PRINT NOW
+           </button>
+        </div>
       </div>
 
-      <div className="max-w-4xl mx-auto mt-20 border p-12 rounded-xl shadow-none bg-white">
+      {/* DOCUMENT CONTENT */}
+      <div className="print-content max-w-4xl mx-auto mt-24 border p-12 rounded-xl shadow-none bg-white">
         {/* SHARED HEADER */}
         <div className="flex justify-between items-start mb-12 border-b pb-8">
            <div>
@@ -231,7 +227,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v4.5 Enterprise System</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v4.6 Enterprise System</p>
       </div>
     </div>
   );
@@ -832,7 +828,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
+const Purchases = ({ purchases = [], suppliers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack, onPrint }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
@@ -1014,7 +1010,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack, onPrint }) =
   )
 };
 
-const ContactList = ({ title, data, collectionName, onBack }) => {
+const ContactList = ({ title, data = [], collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
    const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
@@ -1035,7 +1031,7 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
 };
 
 // --- UPDATED SAMPLES: SMART ROLL DROPDOWN ---
-const SamplesTab = ({ samples, customers, fabrics, onBack, onPrint }) => {
+const SamplesTab = ({ samples = [], customers = [], fabrics = [], onBack, onPrint }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); 
   const [editingId, setEditingId] = useState(null); 
@@ -1190,7 +1186,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.5</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v4.6</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
