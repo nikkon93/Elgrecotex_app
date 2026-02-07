@@ -138,7 +138,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.4 Full Edition</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.6 Enterprise</p>
       </div>
     </div>
   );
@@ -184,7 +184,7 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   fabrics.forEach(f => { 
       const avgPrice = calculateWeightedAverageCost(f.mainCode, purchases, fabrics); 
       (f.rolls || []).forEach(r => { 
-          // Use specific roll price if exists, otherwise fallback to avgPrice
+          // FIX: Use roll price if exists, otherwise fallback to avgPrice
           const price = parseFloat(r.price) > 0 ? parseFloat(r.price) : avgPrice;
           total += (parseFloat(r.meters || 0) * price); 
       }); 
@@ -334,7 +334,6 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
-  // FIXED EXPORT FUNCTION
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -492,7 +491,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
   );
 };
 
-// --- INVENTORY TAB (UNCHANGED) ---
+// --- INVENTORY TAB (HIGHLIGHTED + FIXED SEARCH) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -658,7 +657,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   );
 };
 
-// --- SALES INVOICES (FIXED STOCK DEDUCTION) ---
+// --- 5. SALES INVOICES (FIXED STOCK DEDUCTION AGGRESSIVE) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -685,26 +684,38 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const addItem = () => { if (item.rollId && item.meters && item.pricePerMeter) { const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); if (!roll) return; const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewOrder({ ...newOrder, items: [...(newOrder.items||[]), { ...item, subCode: roll.subCode, description: roll.description, totalPrice: total }] }); setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); }};
   
-  // FIXED DEDUCT STOCK: Group logic to prevent race conditions
-  const deductStock = async (items) => {
+  // --- REWRITTEN DEDUCT STOCK FUNCTION ---
+  const deductStock = async (invoiceItems) => {
+    // 1. Group items by fabric ID to handle multiple cuts from same fabric safely
     const fabricsToUpdate = {};
-    items.forEach(item => {
-        if(!fabricsToUpdate[item.fabricCode]) fabricsToUpdate[item.fabricCode] = [];
-        fabricsToUpdate[item.fabricCode].push(item);
+    
+    invoiceItems.forEach(i => {
+       const fabric = fabrics.find(f => f.mainCode === i.fabricCode);
+       if(fabric) {
+         if(!fabricsToUpdate[fabric.id]) fabricsToUpdate[fabric.id] = [];
+         fabricsToUpdate[fabric.id].push(i);
+       }
     });
 
-    for (const [code, items] of Object.entries(fabricsToUpdate)) {
-        const fabric = fabrics.find(f => f.mainCode === code);
-        if(fabric) {
-            const updatedRolls = fabric.rolls.map(roll => {
-                const match = items.find(i => String(i.rollId) === String(roll.rollId));
-                if(match) {
-                    return { ...roll, meters: Math.max(0, parseFloat(roll.meters) - parseFloat(match.meters)) };
-                }
-                return roll;
-            });
-            await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls });
-        }
+    // 2. Update each fabric ONCE
+    for (const [fabricId, itemsToDeduct] of Object.entries(fabricsToUpdate)) {
+       const fabric = fabrics.find(f => f.id === fabricId);
+       
+       // Calculate new rolls in memory
+       const updatedRolls = fabric.rolls.map(roll => {
+          // Find if this roll is in the invoice
+          const matchingItem = itemsToDeduct.find(i => String(i.rollId) === String(roll.rollId));
+          
+          if (matchingItem) {
+             const currentMeters = parseFloat(roll.meters) || 0;
+             const deductMeters = parseFloat(matchingItem.meters) || 0;
+             return { ...roll, meters: Math.max(0, currentMeters - deductMeters) };
+          }
+          return roll;
+       });
+
+       // Commit to DB
+       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
     }
   };
 
@@ -717,8 +728,13 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
       if (editingId) { 
           await updateDoc(doc(db, "orders", editingId), orderToSave); 
       } else { 
-          if (newOrder.status === 'Completed') await deductStock(newOrder.items); 
-          await addDoc(collection(db, "orders"), orderToSave); 
+          // SAVE ORDER FIRST
+          await addDoc(collection(db, "orders"), orderToSave);
+          
+          // THEN DEDUCT STOCK IF COMPLETED
+          if (newOrder.status === 'Completed') {
+             await deductStock(newOrder.items);
+          }
       } 
       setShowAdd(false); 
   };
@@ -750,7 +766,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending (No Stock Deduct)</option><option value="Completed">Completed (Deduct Stock)</option></select></div>
           </div>
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
             <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Order Items</h4>
@@ -794,7 +810,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- UPDATED PURCHASES WITH AI SCANNER (CLOUD ENGINE) ---
+// --- 6. PURCHASES (With Scanner) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
@@ -992,7 +1008,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
    )
 };
 
-// --- UPDATED EXPENSES (UNCHANGED) ---
+// --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1262,7 +1278,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.4</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.6</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
