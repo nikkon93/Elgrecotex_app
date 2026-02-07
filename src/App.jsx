@@ -4,7 +4,8 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown,
+  Camera, Loader2 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -79,6 +80,22 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
+// --- COMPONENT: LOADING OVERLAY (For AI Scanner) ---
+const LoadingOverlay = ({ status }) => (
+  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex flex-col items-center justify-center animate-in fade-in">
+    <div className="bg-white p-10 rounded-3xl shadow-2xl flex flex-col items-center gap-6 border border-white/20">
+      <div className="relative">
+        <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping opacity-20"></div>
+        <Loader2 className="animate-spin text-emerald-500 relative z-10" size={64} />
+      </div>
+      <div className="text-center">
+        <h3 className="text-2xl font-black text-slate-800 tracking-tight">AI Vision Active</h3>
+        <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mt-2">{status || 'Processing...'}</p>
+      </div>
+    </div>
+  </div>
+);
+
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
   const [input, setInput] = useState('');
@@ -121,7 +138,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.1 PDF Solution</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.2 AI Edition</p>
       </div>
     </div>
   );
@@ -507,9 +524,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   const handleSaveRoll = async (fabricId) => {
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
-      let updatedRolls = fabric.rolls || [];
-      if(editRollMode) { updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r); } 
-      else { updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }]; }
+      const updatedRolls = editRollMode ? fabric.rolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r) : [...(fabric.rolls || []), { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }];
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
       setCurrentRoll({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
@@ -738,12 +753,68 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
+// --- UPDATED PURCHASES WITH AI SCANNER (CLOUD ENGINE) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
    const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
    const [item, setItem] = useState({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' });
+   
+   // --- AI SCANNER STATE ---
+   const [isScanning, setIsScanning] = useState(false);
+   const [scanStatus, setScanStatus] = useState('');
+
+   // --- AI SCANNER LOGIC (NO INSTALL REQUIRED) ---
+   const handleScan = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (!window.Tesseract) {
+          alert("AI Engine is still loading. Please check internet connection and try again in 5 seconds.");
+          return;
+      }
+
+      setIsScanning(true);
+      setScanStatus("Analyzing Label via AI...");
+
+      try {
+          const { data: { text } } = await window.Tesseract.recognize(file, 'eng', {
+              logger: m => {
+                  if (m.status === 'recognizing text') {
+                      setScanStatus(`Reading Text: ${Math.round(m.progress * 100)}%`);
+                  } else {
+                      setScanStatus(m.status);
+                  }
+              }
+          });
+
+          // REGEX EXTRACTION
+          const designMatch = text.match(/(?:Design\/Col\.|Col\.:)\s*([A-Z0-9.]+)/i);
+          const meterMatch = text.match(/Net\s*Mt\s*[:.]?\s*(\d{1,3}[.,]\d{1,2})/i);
+          const rollMatch = text.match(/Roll\s*Code\s*[:.]?\s*([A-Z0-9]+)/i);
+          const weightMatch = text.match(/(\d{1,3}[.,]\d{2})\s*KG/i);
+          const widthMatch = text.match(/(\d{3})\s*CM/i);
+
+          const weight = weightMatch ? weightMatch[1].replace(',', '.') + 'kg' : '';
+          const width = widthMatch ? widthMatch[1] + 'cm' : '';
+          const autoDesc = [weight, width].filter(Boolean).join(' / ');
+
+          setItem(prev => ({
+              ...prev,
+              fabricCode: designMatch ? designMatch[1].toUpperCase() : prev.fabricCode,
+              meters: meterMatch ? meterMatch[1].replace(',', '.') : prev.meters,
+              subCode: rollMatch ? rollMatch[1] : prev.subCode,
+              description: autoDesc || prev.description
+          }));
+
+      } catch (err) {
+          console.error(err);
+          alert("Scan Failed: " + err.message);
+      } finally {
+          setIsScanning(false);
+      }
+   };
 
    if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
    const addItem = () => { if(item.fabricCode && item.meters && item.pricePerMeter) { const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewPurchase({...newPurchase, items: [...newPurchase.items, { ...item, totalPrice: total }] }); setItem({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' }); }};
@@ -765,6 +836,9 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
    return (
       <div className="space-y-6">
+         {/* LOADING OVERLAY TRIGGERED BY SCANNER */}
+         {isScanning && <LoadingOverlay status={scanStatus} />}
+
          <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
                 <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
@@ -775,6 +849,17 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
          {showAdd && (
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
                <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
+               
+               {/* --- NEW SCANNER BUTTON --- */}
+               <div className="mb-8">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-emerald-400 border-dashed rounded-xl bg-emerald-50 hover:bg-emerald-100 transition-all cursor-pointer group">
+                      <Camera className="text-emerald-500 mb-2 group-hover:scale-110 transition-transform" size={32} />
+                      <span className="text-sm font-bold text-emerald-800 uppercase">Click to Scan Fabric Label</span>
+                      <span className="text-xs text-emerald-600">Auto-fills Code, Meters & Details</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleScan} />
+                  </label>
+               </div>
+
                <div className="grid grid-cols-4 gap-6 mb-6">
                   <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                   <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
@@ -784,12 +869,12 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                <div className="bg-emerald-50 p-6 rounded-xl mb-6">
                   <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Items</h4>
                   <div className="flex gap-4 mb-4">
-                     <div className="flex-1"><input className="w-full border p-3 rounded-lg bg-white" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Fabric Code (Type/Select)"/><datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist></div>
-                     <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Sub Code" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
-                     <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
-                     <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="M" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
-                     <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="€/M" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
-                     <button onClick={addItem} className="bg-emerald-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-emerald-200">Add</button>
+                      <div className="flex-1"><input className="w-full border p-3 rounded-lg bg-white font-bold text-slate-700" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Code"/><datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist></div>
+                      <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Roll ID" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
+                      <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
+                      <input type="number" className="border p-3 rounded-lg w-24 bg-white font-bold" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
+                      <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="€/M" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
+                      <button onClick={addItem} className="bg-emerald-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-emerald-200">Add</button>
                   </div>
                   {newPurchase.items.map((i, idx) => (
                      <div key={idx} className="flex justify-between items-center border-t border-emerald-100 py-2"><span className="text-emerald-900 font-medium">{i.fabricCode} {i.subCode} ({i.description})</span><span className="text-emerald-700">{i.meters}m x €{i.pricePerMeter} = €{i.totalPrice.toFixed(2)}</span><button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></div>
@@ -871,19 +956,19 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
           </div>
           
           <div className="bg-orange-50 p-6 rounded-xl mb-6">
-             <h4 className="font-bold text-orange-800 mb-4 text-sm uppercase">Expense Items</h4>
-             <div className="flex gap-4 mb-4 items-end">
-                <div className="flex-1"><label className="text-xs font-bold text-slate-400 uppercase">Description</label><input className="w-full border p-3 rounded-lg bg-white" value={currentItem.description} onChange={e => setCurrentItem({ ...currentItem, description: e.target.value })} /></div>
-                <div className="w-32"><label className="text-xs font-bold text-slate-400 uppercase">Net €</label><input type="number" className="w-full border p-3 rounded-lg bg-white" value={currentItem.netPrice} onChange={e => setCurrentItem({ ...currentItem, netPrice: e.target.value })} /></div>
-                <button onClick={addItem} className="bg-orange-600 text-white px-6 py-3 rounded-lg font-bold shadow-lg">Add</button>
-             </div>
-             {newExpense.items.map((item, idx) => (
-                 <div key={idx} className="flex justify-between items-center border-t border-orange-200 py-2">
-                     <span className="text-orange-900">{item.description}</span>
-                     <span className="text-orange-900 font-bold">€{item.netPrice.toFixed(2)}</span>
-                     <button onClick={() => setNewExpense({...newExpense, items: newExpense.items.filter((_, i) => i !== idx)})} className="text-red-500"><Trash2 size={16}/></button>
-                 </div>
-             ))}
+              <h4 className="font-bold text-orange-800 mb-4 text-sm uppercase">Expense Items</h4>
+              <div className="flex gap-4 mb-4 items-end">
+                 <div className="flex-1"><label className="text-xs font-bold text-slate-400 uppercase">Description</label><input className="w-full border p-3 rounded-lg bg-white" value={currentItem.description} onChange={e => setCurrentItem({ ...currentItem, description: e.target.value })} /></div>
+                 <div className="w-32"><label className="text-xs font-bold text-slate-400 uppercase">Net €</label><input type="number" className="w-full border p-3 rounded-lg bg-white" value={currentItem.netPrice} onChange={e => setCurrentItem({ ...currentItem, netPrice: e.target.value })} /></div>
+                 <button onClick={addItem} className="bg-orange-600 text-white px-6 py-3 rounded-lg font-bold shadow-lg">Add</button>
+              </div>
+              {newExpense.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center border-t border-orange-200 py-2">
+                      <span className="text-orange-900">{item.description}</span>
+                      <span className="text-orange-900 font-bold">€{item.netPrice.toFixed(2)}</span>
+                      <button onClick={() => setNewExpense({...newExpense, items: newExpense.items.filter((_, i) => i !== idx)})} className="text-red-500"><Trash2 size={16}/></button>
+                  </div>
+              ))}
           </div>
 
           <div className="flex justify-end gap-3">
@@ -1086,7 +1171,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.1</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.2 AI</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
