@@ -871,7 +871,24 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
       } finally {
           setIsScanning(false);
       }
-   };
+   };// --- PASTE THE NEW CODE HERE ---
+  const handleExcelItems = (importedItems) => {
+    if (!importedItems || importedItems.length === 0) return;
+    setNewPurchase(prev => ({
+      ...prev,
+      items: [
+        ...prev.items, 
+        ...importedItems.map(item => ({
+          ...item,
+          meters: parseFloat(item.meters) || 0,
+          pricePerMeter: parseFloat(item.pricePerMeter) || 0,
+          totalPrice: (parseFloat(item.meters) || 0) * (parseFloat(item.pricePerMeter) || 0)
+        }))
+      ]
+    }));
+    alert(`Success! Added ${importedItems.length} items from Excel.`);
+  };
+  // --- END OF NEW CODE ---
 
    if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
    
@@ -974,7 +991,10 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                   <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
                </div>
                <div className="bg-emerald-50 p-6 rounded-xl mb-6">
-                  <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Items</h4>
+                  <div className="flex justify-between items-center mb-4">
+  <h4 className="font-bold text-emerald-800 text-sm uppercase">Items</h4>
+  <ImportExcelBtn mode="read-only" onDataRead={handleExcelItems} />
+</div>
                   <div className="flex gap-4 mb-4">
                       <div className="flex-1"><input className="w-full border p-3 rounded-lg bg-white font-bold text-slate-700" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Code"/><datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist></div>
                       <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Roll ID" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
