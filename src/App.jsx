@@ -293,7 +293,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- DASHBOARD (CRASH PROOFED) ---
+// --- DASHBOARD (UPDATED FOR v5.8 EXCEL EXPORT) ---
 const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], suppliers = [], customers = [], samples = [], dateRangeStart, dateRangeEnd, setActiveTab }) => {
   // SAFE CALCULATIONS: Handle undefined/null gracefully
   const totalFabrics = fabrics?.length || 0;
@@ -315,18 +315,27 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
   const totalGrossProfit = totalRevenue - totalNetPurchases;
 
+  // --- UPDATED EXPORT FUNCTION ---
   const exportAllData = () => {
     try {
       const wb = XLSX.utils.book_new();
       
+      // 1. INVENTORY SHEET (Added New Fields)
       const inventoryData = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
           Supplier: f.supplier || '', 
           MainCode: f.mainCode, 
           Name: f.name, 
           SalePrice: f.salePrice || '', 
-          SubCode: r.subCode, 
-          RollID: r.rollId, 
+          RollCode: r.subCode, // Renamed Header
           Description: r.description || '', 
+          // NEW FIELDS
+          "Design/Col": r.designCol || '',
+          Color: r.rollColor || '',
+          Quality: r.quality || '',
+          "Qual No": r.qualityNo || '',
+          "Net Kgr": r.netKgr || '',
+          Width: r.width || '',
+          // METRICS
           Meters: r.meters, 
           Location: r.location, 
           Price: r.price, 
@@ -334,12 +343,13 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
       
+      // 2. SALES SHEET
       const salesData = orders.flatMap(o => (o.items || []).map(item => ({ 
           OrderID: o.orderId || '',
           Date: o.date, 
           Invoice: o.invoiceNo, 
           Customer: o.customer, 
-          SubCode: item.subCode, 
+          RollCode: item.subCode, 
           Description: item.description || '', 
           Qty: item.meters, 
           Net: item.totalPrice, 
@@ -349,7 +359,25 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
       
-      const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ Date: p.date, Supplier: p.supplier, SubCode: item.subCode, Description: item.description || '', Qty: item.meters, Net: item.totalPrice, VAT: item.totalPrice * (p.vatRate/100), Total: item.totalPrice * (1 + p.vatRate/100) })));
+      // 3. PURCHASES SHEET (Added New Fields)
+      const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ 
+          Date: p.date, 
+          Supplier: p.supplier, 
+          RollCode: item.subCode, // Renamed Header
+          Description: item.description || '', 
+          // NEW FIELDS
+          "Design/Col": item.designCol || '',
+          Color: item.rollColor || '',
+          Quality: item.quality || '',
+          "Qual No": item.qualityNo || '',
+          "Net Kgr": item.netKgr || '',
+          Width: item.width || '',
+          // METRICS
+          Qty: item.meters, 
+          Net: item.totalPrice, 
+          VAT: item.totalPrice * (p.vatRate/100), 
+          Total: item.totalPrice * (1 + p.vatRate/100) 
+      })));
       if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
       
       const expenseData = expenses.flatMap(e => (e.items || []).map(item => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: item.description, Net: item.netPrice, VAT: item.totalPrice - item.netPrice, Total: item.totalPrice })));
@@ -441,31 +469,6 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
                  <span className="text-4xl font-extrabold text-emerald-900">€{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
               </div>
            </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) => {
-  const colors = { 
-    blue: "bg-blue-50 text-blue-600 border-blue-100", 
-    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100", 
-    purple: "bg-purple-50 text-purple-600 border-purple-100", 
-    amber: "bg-amber-50 text-amber-600 border-amber-100",
-    red: "bg-red-50 text-red-600 border-red-100"
-  };
-  
-  return (
-    <div onClick={onClick} className={`bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer group`}>
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{title}</p>
-          <h4 className="text-3xl font-extrabold text-slate-800">{value}</h4>
-          {subValue && <p className="text-xs font-medium text-slate-400 mt-2">{subValue}</p>}
-        </div>
-        <div className={`p-3 rounded-xl ${colors[color]}`}>
-          <Icon size={24} />
         </div>
       </div>
     </div>
