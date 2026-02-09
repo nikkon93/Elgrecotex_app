@@ -474,7 +474,31 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
     </div>
   );
 };
-
+// --- HELPER COMPONENT: DASHBOARD CARD ---
+const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) => {
+  const colors = { 
+    blue: "bg-blue-50 text-blue-600 border-blue-100", 
+    emerald: "bg-emerald-50 text-emerald-600 border-emerald-100", 
+    purple: "bg-purple-50 text-purple-600 border-purple-100", 
+    amber: "bg-amber-50 text-amber-600 border-amber-100",
+    red: "bg-red-50 text-red-600 border-red-100"
+  };
+  
+  return (
+    <div onClick={onClick} className={`bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer group`}>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{title}</p>
+          <h4 className="text-3xl font-extrabold text-slate-800">{value}</h4>
+          {subValue && <p className="text-xs font-medium text-slate-400 mt-2">{subValue}</p>}
+        </div>
+        <div className={`p-3 rounded-xl ${colors[color]}`}>
+          <Icon size={24} />
+        </div>
+      </div>
+    </div>
+  );
+};
 // --- INVENTORY TAB (HIGHLIGHTED + FIXED SEARCH) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
