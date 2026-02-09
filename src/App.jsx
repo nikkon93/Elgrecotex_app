@@ -820,38 +820,82 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
+// --- UPDATED PURCHASES COMPONENT (v5.9: New Fields + Excel Import) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
   
-  // UPDATED: Added new fields to item state
+  // State for manual input - Includes ALL your new fields
   const [item, setItem] = useState({ 
-    fabricCode: '', 
-    rollCode: '', // Replaces 'subCode' in UI
-    description: '', 
-    designCol: '', 
-    rollColor: '', 
-    quality: '', 
-    qualityNo: '', 
-    netKgr: '', 
-    width: '', 
-    meters: '', 
-    pricePerMeter: '' 
+    fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' 
   });
 
+  // Reference for the hidden file input (REQUIRED FOR IMPORT)
+  const fileInputRef = React.useRef(null);
+
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
+
+  // --- EXCEL IMPORT LOGIC (REQUIRED FOR IMPORT) ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        // Map Excel columns to App structure
+        const importedItems = data.map(row => {
+            const getVal = (key) => row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || '';
+            const meters = parseFloat(getVal('Meters') || getVal('Qty') || 0);
+            const price = parseFloat(getVal('Price') || getVal('Cost') || 0);
+            
+            return {
+                fabricCode: getVal('Fabric Code') || getVal('Main Code') || 'UNKNOWN',
+                subCode: getVal('Roll Code') || getVal('Sub Code') || 'NEW', 
+                description: getVal('Description') || '',
+                designCol: getVal('Design/Col') || getVal('Design') || '',
+                rollColor: getVal('Color') || '',
+                quality: getVal('Quality') || '',
+                qualityNo: getVal('Qual No') || getVal('Quality No') || '',
+                netKgr: getVal('Net Kgr') || getVal('Kgr') || '',
+                width: getVal('Width') || '',
+                meters: meters,
+                pricePerMeter: price,
+                totalPrice: meters * price
+            };
+        }).filter(i => i.meters > 0);
+
+        if(importedItems.length > 0) {
+            setNewPurchase(prev => ({ ...prev, items: [...prev.items, ...importedItems] }));
+            setShowAdd(true);
+            alert(`Successfully imported ${importedItems.length} items!`);
+        } else {
+            alert("No valid items found. Please check Excel headers.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error reading file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null; 
+  };
 
   const addItem = () => { 
     if(item.fabricCode && item.meters && item.pricePerMeter) { 
       const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); 
-      // Map 'rollCode' back to 'subCode' for database compatibility
       setNewPurchase({
         ...newPurchase, 
         items: [...newPurchase.items, { ...item, subCode: item.rollCode, totalPrice: total }] 
       }); 
-      // Reset form
       setItem({ fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' }); 
     }
   };
@@ -860,24 +904,31 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
     const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
     const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
     const final = subtotal + vat;
-    const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final, items: newPurchase.items.map(i => ({...i, meters: parseFloat(i.meters), pricePerMeter: parseFloat(i.pricePerMeter), totalPrice: parseFloat(i.totalPrice) })) };
+    
+    // Ensure numbers are stored as numbers
+    const finalItems = newPurchase.items.map(i => ({
+        ...i, 
+        meters: parseFloat(i.meters), 
+        pricePerMeter: parseFloat(i.pricePerMeter), 
+        totalPrice: parseFloat(i.totalPrice) 
+    }));
+
+    const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final, items: finalItems };
     
     if(editingId) { 
       await updateDoc(doc(db, "purchases", editingId), purchaseData); 
     } else { 
       await addDoc(collection(db, "purchases"), purchaseData);
       
-      // AUTO-UPDATE INVENTORY LOGIC
+      // AUTO-CREATE ROLLS IN INVENTORY
       const rollsByFabric = {};
-      newPurchase.items.forEach(purchasedItem => { 
+      finalItems.forEach(purchasedItem => { 
         const code = purchasedItem.fabricCode; 
         if (!rollsByFabric[code]) rollsByFabric[code] = []; 
-        
         rollsByFabric[code].push({ 
           rollId: Date.now() + Math.random(), 
-          subCode: purchasedItem.subCode || 'NEW', // Kept as subCode for DB compatibility
+          subCode: purchasedItem.subCode || 'NEW', 
           description: purchasedItem.description || '', 
-          // NEW FIELDS MAPPED HERE
           designCol: purchasedItem.designCol || '',
           rollColor: purchasedItem.rollColor || '',
           quality: purchasedItem.quality || '',
@@ -907,19 +958,28 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   return (
     <div className="space-y-6">
+       {/* HIDDEN FILE INPUT */}
+       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
+
        <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
               <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
               <div><h2 className="text-2xl font-bold text-slate-800">Purchases</h2><p className="text-slate-500">Track incoming stock and costs</p></div>
           </div>
-          <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"><Plus size={20}/> New Purchase</button>
+          <div className="flex gap-2">
+             <button onClick={() => fileInputRef.current.click()} className="bg-blue-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2">
+                <Upload size={20}/> Import Excel
+             </button>
+             <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
+                <Plus size={20}/> New Purchase
+             </button>
+          </div>
        </div>
 
        {showAdd && (
           <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
              <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
              
-             {/* HEADER FIELDS */}
              <div className="grid grid-cols-4 gap-6 mb-6">
                 <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                 <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
@@ -927,11 +987,10 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                 <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
              </div>
 
-             {/* ITEMS INPUT AREA - REDESIGNED FOR MORE FIELDS */}
              <div className="bg-emerald-50 p-4 rounded-xl mb-6">
                 <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Add Items / Rolls</h4>
                 
-                {/* Row 1: Codes & Basic Info */}
+                {/* Manual Input Form */}
                 <div className="grid grid-cols-12 gap-3 mb-3">
                    <div className="col-span-3">
                       <label className="text-[10px] font-bold text-emerald-700 uppercase">Fabric Code</label>
@@ -948,58 +1007,28 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                    </div>
                 </div>
 
-                {/* Row 2: Detailed Specs */}
                 <div className="grid grid-cols-10 gap-3 mb-3">
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Design/Col</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" value={item.designCol} onChange={e => setItem({...item, designCol: e.target.value})} />
-                   </div>
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Color</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" value={item.rollColor} onChange={e => setItem({...item, rollColor: e.target.value})} />
-                   </div>
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Quality</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" value={item.quality} onChange={e => setItem({...item, quality: e.target.value})} />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Qual No</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" value={item.qualityNo} onChange={e => setItem({...item, qualityNo: e.target.value})} />
-                   </div>
-                   <div className="col-span-1">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Net Kgr</label>
-                      <input type="number" className="w-full border p-2 rounded bg-white text-sm" value={item.netKgr} onChange={e => setItem({...item, netKgr: e.target.value})} />
-                   </div>
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Width</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" value={item.width} onChange={e => setItem({...item, width: e.target.value})} />
-                   </div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Design/Col</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.designCol} onChange={e => setItem({...item, designCol: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Color</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.rollColor} onChange={e => setItem({...item, rollColor: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Quality</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.quality} onChange={e => setItem({...item, quality: e.target.value})} /></div>
+                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Qual No</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.qualityNo} onChange={e => setItem({...item, qualityNo: e.target.value})} /></div>
+                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Net Kgr</label><input type="number" className="w-full border p-2 rounded bg-white text-sm" value={item.netKgr} onChange={e => setItem({...item, netKgr: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Width</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.width} onChange={e => setItem({...item, width: e.target.value})} /></div>
                 </div>
 
-                {/* Row 3: Metrics & Action */}
                 <div className="grid grid-cols-12 gap-3">
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Meters</label>
-                      <input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
-                   </div>
-                   <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Price/M (€)</label>
-                      <input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
-                   </div>
-                   <div className="col-span-8 flex items-end">
-                      <button onClick={addItem} className="w-full bg-emerald-600 text-white py-2 rounded font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">Add Item To List</button>
-                   </div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Meters</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Price/M (€)</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} /></div>
+                   <div className="col-span-8 flex items-end"><button onClick={addItem} className="w-full bg-emerald-600 text-white py-2 rounded font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">Add Item To List</button></div>
                 </div>
 
-                {/* Added Items List */}
-                <div className="mt-4 space-y-2">
-                   {newPurchase.items.map((i, idx) => (
-                      <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm">
+                {/* Items List (Manual + Imported) */}
+                <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                   {newPurchase.items.length > 0 ? newPurchase.items.map((i, idx) => (
+                      <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm animate-in fade-in">
                          <div>
                             <p className="font-bold text-emerald-900">{i.fabricCode} <span className="text-slate-400">|</span> {i.subCode}</p>
-                            <p className="text-xs text-emerald-600">
-                               {i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.quality && `• ${i.quality}`} ({i.width})
-                            </p>
+                            <p className="text-xs text-emerald-600">{i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.quality && `• ${i.quality}`} ({i.width})</p>
                          </div>
                          <div className="text-right">
                             <p className="font-mono font-bold text-slate-700">{i.meters}m x €{i.pricePerMeter}</p>
@@ -1007,7 +1036,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                          </div>
                          <button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600 ml-4"><Trash2 size={16}/></button>
                       </div>
-                   ))}
+                   )) : <div className="text-center py-4 text-emerald-400 italic text-sm">No items added yet. Use the form above or Import Excel.</div>}
                 </div>
              </div>
 
