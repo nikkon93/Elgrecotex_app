@@ -4,8 +4,7 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, order
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown,
-  Camera, Loader2
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -80,22 +79,6 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- COMPONENT: LOADING OVERLAY (For AI Scanner) ---
-const LoadingOverlay = ({ status }) => (
-  <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[9999] flex flex-col items-center justify-center animate-in fade-in">
-    <div className="bg-white p-10 rounded-3xl shadow-2xl flex flex-col items-center gap-6 border border-white/20">
-      <div className="relative">
-        <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping opacity-20"></div>
-        <Loader2 className="animate-spin text-emerald-500 relative z-10" size={64} />
-      </div>
-      <div className="text-center">
-        <h3 className="text-2xl font-black text-slate-800 tracking-tight">AI Vision Active</h3>
-        <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mt-2">{status || 'Processing...'}</p>
-      </div>
-    </div>
-  </div>
-);
-
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
   const [input, setInput] = useState('');
@@ -138,7 +121,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.6 Enterprise</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.1 PDF Solution</p>
       </div>
     </div>
   );
@@ -184,9 +167,7 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   fabrics.forEach(f => { 
       const avgPrice = calculateWeightedAverageCost(f.mainCode, purchases, fabrics); 
       (f.rolls || []).forEach(r => { 
-          // FIX: Use roll price if exists, otherwise fallback to avgPrice
-          const price = parseFloat(r.price) > 0 ? parseFloat(r.price) : avgPrice;
-          total += (parseFloat(r.meters || 0) * price); 
+          total += (parseFloat(r.meters || 0) * (parseFloat(r.price || 0) || avgPrice)); 
       }); 
   });
   return total;
@@ -312,7 +293,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- DASHBOARD (CRASH PROOFED + EXPORT FIXED) ---
+// --- DASHBOARD (CRASH PROOFED) ---
 const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], suppliers = [], customers = [], samples = [], dateRangeStart, dateRangeEnd, setActiveTab }) => {
   // SAFE CALCULATIONS: Handle undefined/null gracefully
   const totalFabrics = fabrics?.length || 0;
@@ -526,7 +507,9 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   const handleSaveRoll = async (fabricId) => {
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
-      const updatedRolls = editRollMode ? fabric.rolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r) : [...(fabric.rolls || []), { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }];
+      let updatedRolls = fabric.rolls || [];
+      if(editRollMode) { updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r); } 
+      else { updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }]; }
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
       setCurrentRoll({ rollId: '', subCode: '', description: '', meters: '', location: '', price: '', image: '' });
@@ -657,7 +640,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   );
 };
 
-// --- 5. SALES INVOICES (FIXED STOCK DEDUCTION AGGRESSIVE) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -683,62 +665,8 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   };
 
   const addItem = () => { if (item.rollId && item.meters && item.pricePerMeter) { const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); if (!roll) return; const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewOrder({ ...newOrder, items: [...(newOrder.items||[]), { ...item, subCode: roll.subCode, description: roll.description, totalPrice: total }] }); setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); }};
-  
-  // --- REWRITTEN DEDUCT STOCK FUNCTION ---
-  const deductStock = async (invoiceItems) => {
-    // 1. Group items by fabric ID to handle multiple cuts from same fabric safely
-    const fabricsToUpdate = {};
-    
-    invoiceItems.forEach(i => {
-       const fabric = fabrics.find(f => f.mainCode === i.fabricCode);
-       if(fabric) {
-         if(!fabricsToUpdate[fabric.id]) fabricsToUpdate[fabric.id] = [];
-         fabricsToUpdate[fabric.id].push(i);
-       }
-    });
-
-    // 2. Update each fabric ONCE
-    for (const [fabricId, itemsToDeduct] of Object.entries(fabricsToUpdate)) {
-       const fabric = fabrics.find(f => f.id === fabricId);
-       
-       // Calculate new rolls in memory
-       const updatedRolls = fabric.rolls.map(roll => {
-          // Find if this roll is in the invoice
-          const matchingItem = itemsToDeduct.find(i => String(i.rollId) === String(roll.rollId));
-          
-          if (matchingItem) {
-             const currentMeters = parseFloat(roll.meters) || 0;
-             const deductMeters = parseFloat(matchingItem.meters) || 0;
-             return { ...roll, meters: Math.max(0, currentMeters - deductMeters) };
-          }
-          return roll;
-       });
-
-       // Commit to DB
-       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
-    }
-  };
-
-  const saveOrder = async () => { 
-      const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); 
-      const vat = subtotal * (newOrder.vatRate / 100); 
-      const final = subtotal + vat; 
-      const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; 
-      
-      if (editingId) { 
-          await updateDoc(doc(db, "orders", editingId), orderToSave); 
-      } else { 
-          // SAVE ORDER FIRST
-          await addDoc(collection(db, "orders"), orderToSave);
-          
-          // THEN DEDUCT STOCK IF COMPLETED
-          if (newOrder.status === 'Completed') {
-             await deductStock(newOrder.items);
-          }
-      } 
-      setShowAdd(false); 
-  };
-  
+  const deductStock = async (orderItems) => { for (const orderItem of orderItems) { const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode); if(fabric) { const updatedRolls = fabric.rolls.map(r => { if(r.rollId == orderItem.rollId) { return { ...r, meters: Math.max(0, parseFloat(r.meters) - parseFloat(orderItem.meters)) }; } return r; }); await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls }); }}};
+  const saveOrder = async () => { const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); const vat = subtotal * (newOrder.vatRate / 100); const final = subtotal + vat; const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; if (editingId) { await updateDoc(doc(db, "orders", editingId), orderToSave); } else { if (newOrder.status === 'Completed') await deductStock(newOrder.items); await addDoc(collection(db, "orders"), orderToSave); } setShowAdd(false); setEditingId(null); setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] }); };
   const updateStatus = async (id, newStatus) => { const order = orders.find(o => o.id === id); if (order.status !== 'Completed' && newStatus === 'Completed') await deductStock(order.items); await updateDoc(doc(db, "orders", id), { status: newStatus }); };
   const deleteOrder = async (id) => { if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id)); }
 
@@ -766,7 +694,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending (No Stock Deduct)</option><option value="Completed">Completed (Deduct Stock)</option></select></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
           </div>
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
             <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Order Items</h4>
@@ -810,159 +738,33 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- 6. PURCHASES (With Scanner) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
    const [showAdd, setShowAdd] = useState(false);
    const [editingId, setEditingId] = useState(null);
    const [viewInvoice, setViewInvoice] = useState(null);
    const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
    const [item, setItem] = useState({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' });
-   
-   // --- AI SCANNER STATE ---
-   const [isScanning, setIsScanning] = useState(false);
-   const [scanStatus, setScanStatus] = useState('');
-
-   // --- AI SCANNER LOGIC (NO INSTALL REQUIRED) ---
-   const handleScan = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      if (!window.Tesseract) {
-          alert("AI Engine is still loading. Please check internet connection and try again in 5 seconds.");
-          return;
-      }
-
-      setIsScanning(true);
-      setScanStatus("Analyzing Label via AI...");
-
-      try {
-          const { data: { text } } = await window.Tesseract.recognize(file, 'eng', {
-              logger: m => {
-                  if (m.status === 'recognizing text') {
-                      setScanStatus(`Reading Text: ${Math.round(m.progress * 100)}%`);
-                  } else {
-                      setScanStatus(m.status);
-                  }
-              }
-          });
-
-          // REGEX EXTRACTION
-          const designMatch = text.match(/(?:Design\/Col\.|Col\.:)\s*([A-Z0-9.]+)/i);
-          const meterMatch = text.match(/Net\s*Mt\s*[:.]?\s*(\d{1,3}[.,]\d{1,2})/i);
-          const rollMatch = text.match(/Roll\s*Code\s*[:.]?\s*([A-Z0-9]+)/i);
-          const weightMatch = text.match(/(\d{1,3}[.,]\d{2})\s*KG/i);
-          const widthMatch = text.match(/(\d{3})\s*CM/i);
-
-          const weight = weightMatch ? weightMatch[1].replace(',', '.') + 'kg' : '';
-          const width = widthMatch ? widthMatch[1] + 'cm' : '';
-          const autoDesc = [weight, width].filter(Boolean).join(' / ');
-
-          setItem(prev => ({
-              ...prev,
-              fabricCode: designMatch ? designMatch[1].toUpperCase() : prev.fabricCode,
-              meters: meterMatch ? meterMatch[1].replace(',', '.') : prev.meters,
-              subCode: rollMatch ? rollMatch[1] : prev.subCode,
-              description: autoDesc || prev.description
-          }));
-
-      } catch (err) {
-          console.error(err);
-          alert("Scan Failed: " + err.message);
-      } finally {
-          setIsScanning(false);
-      }
-   };// --- PASTE THE NEW CODE HERE ---
-  const handleExcelItems = (importedItems) => {
-    if (!importedItems || importedItems.length === 0) return;
-    setNewPurchase(prev => ({
-      ...prev,
-      items: [
-        ...prev.items, 
-        ...importedItems.map(item => ({
-          ...item,
-          meters: parseFloat(item.meters) || 0,
-          pricePerMeter: parseFloat(item.pricePerMeter) || 0,
-          totalPrice: (parseFloat(item.meters) || 0) * (parseFloat(item.pricePerMeter) || 0)
-        }))
-      ]
-    }));
-    alert(`Success! Added ${importedItems.length} items from Excel.`);
-  };
-  // --- END OF NEW CODE ---
 
    if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
-   
-   // FIXED ADD ITEM LOGIC: Forces numbers immediately to prevent string issues later
-   const addItem = () => { 
-      const m = parseFloat(item.meters);
-      const p = parseFloat(item.pricePerMeter);
-      if(item.fabricCode && m > 0 && p > 0) { 
-          const total = m * p; 
-          setNewPurchase({
-              ...newPurchase, 
-              items: [...newPurchase.items, { ...item, meters: m, pricePerMeter: p, totalPrice: total }] 
-          }); 
-          setItem({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' }); 
-      } else {
-          alert("Please enter a valid numeric value for Meters and Price.");
-      }
-   };
-
-   // FIXED SAVE PURCHASE: Recalculates subtotal strictly from items
+   const addItem = () => { if(item.fabricCode && item.meters && item.pricePerMeter) { const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewPurchase({...newPurchase, items: [...newPurchase.items, { ...item, totalPrice: total }] }); setItem({ fabricCode: '', subCode: '', description: '', meters: '', pricePerMeter: '' }); }};
    const savePurchase = async () => {
       const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
       const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
       const final = subtotal + vat;
-      
-      const purchaseData = { 
-          ...newPurchase, 
-          subtotal: subtotal, 
-          vatAmount: vat, 
-          finalPrice: final, 
-          items: newPurchase.items.map(i => ({
-              ...i, 
-              meters: parseFloat(i.meters), 
-              pricePerMeter: parseFloat(i.pricePerMeter), 
-              totalPrice: parseFloat(i.totalPrice) 
-          })) 
-      };
-
+      const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final, items: newPurchase.items.map(i => ({...i, meters: parseFloat(i.meters), pricePerMeter: parseFloat(i.pricePerMeter), totalPrice: parseFloat(i.totalPrice) })) };
       if(editingId) { await updateDoc(doc(db, "purchases", editingId), purchaseData); } 
       else { 
          await addDoc(collection(db, "purchases"), purchaseData);
          const rollsByFabric = {};
-         newPurchase.items.forEach(purchasedItem => { 
-             const code = purchasedItem.fabricCode; 
-             if (!rollsByFabric[code]) rollsByFabric[code] = []; 
-             rollsByFabric[code].push({ 
-                 rollId: Date.now() + Math.random(), 
-                 subCode: purchasedItem.subCode || 'NEW', 
-                 description: purchasedItem.description || '', 
-                 meters: parseFloat(purchasedItem.meters) || 0, 
-                 location: 'Warehouse', 
-                 price: parseFloat(purchasedItem.pricePerMeter) || 0, 
-                 dateAdded: new Date().toISOString().split('T')[0] 
-             }); 
-         });
-         for (const [code, newRolls] of Object.entries(rollsByFabric)) { 
-             const existingFabric = fabrics.find(f => f.mainCode === code); 
-             if (existingFabric) { 
-                 await updateDoc(doc(db, "fabrics", existingFabric.id), { rolls: [...(existingFabric.rolls || []), ...newRolls] }); 
-             } else { 
-                 await addDoc(collection(db, "fabrics"), { mainCode: code, name: "New from Purchase", color: "Assorted", rolls: newRolls }); 
-             }
-         }
+         newPurchase.items.forEach(purchasedItem => { const code = purchasedItem.fabricCode; if (!rollsByFabric[code]) rollsByFabric[code] = []; rollsByFabric[code].push({ rollId: Date.now() + Math.random(), subCode: purchasedItem.subCode || 'NEW', description: purchasedItem.description || '', meters: parseFloat(purchasedItem.meters) || 0, location: 'Warehouse', price: parseFloat(purchasedItem.pricePerMeter) || 0, dateAdded: new Date().toISOString().split('T')[0] }); });
+         for (const [code, newRolls] of Object.entries(rollsByFabric)) { const existingFabric = fabrics.find(f => f.mainCode === code); if (existingFabric) { await updateDoc(doc(db, "fabrics", existingFabric.id), { rolls: [...(existingFabric.rolls || []), ...newRolls] }); } else { await addDoc(collection(db, "fabrics"), { mainCode: code, name: "New from Purchase", color: "Assorted", rolls: newRolls }); }}
       }
       setShowAdd(false); setEditingId(null); setNewPurchase({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
    };
-   
    const handleDelete = async (id) => { if(confirm("Delete this purchase?")) await deleteDoc(doc(db, "purchases", id)); }
 
    return (
       <div className="space-y-6">
-         {/* LOADING OVERLAY TRIGGERED BY SCANNER */}
-         {isScanning && <LoadingOverlay status={scanStatus} />}
-
          <div className="flex justify-between items-center">
             <div className="flex items-center gap-4">
                 <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
@@ -973,17 +775,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
          {showAdd && (
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
                <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
-               
-               {/* --- NEW SCANNER BUTTON --- */}
-               <div className="mb-8">
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-emerald-400 border-dashed rounded-xl bg-emerald-50 hover:bg-emerald-100 transition-all cursor-pointer group">
-                      <Camera className="text-emerald-500 mb-2 group-hover:scale-110 transition-transform" size={32} />
-                      <span className="text-sm font-bold text-emerald-800 uppercase">Click to Scan Fabric Label</span>
-                      <span className="text-xs text-emerald-600">Auto-fills Code, Meters & Details</span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleScan} />
-                  </label>
-               </div>
-
                <div className="grid grid-cols-4 gap-6 mb-6">
                   <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
                   <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
@@ -991,17 +782,14 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                   <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
                </div>
                <div className="bg-emerald-50 p-6 rounded-xl mb-6">
-                  <div className="flex justify-between items-center mb-4">
-  <h4 className="font-bold text-emerald-800 text-sm uppercase">Items</h4>
-  <ImportExcelBtn mode="read-only" onDataRead={handleExcelItems} />
-</div>
+                  <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Items</h4>
                   <div className="flex gap-4 mb-4">
-                      <div className="flex-1"><input className="w-full border p-3 rounded-lg bg-white font-bold text-slate-700" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Code"/><datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist></div>
-                      <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Roll ID" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
-                      <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
-                      <input type="number" className="border p-3 rounded-lg w-24 bg-white font-bold" placeholder="Meters" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
-                      <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="€/M" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
-                      <button onClick={addItem} className="bg-emerald-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-emerald-200">Add</button>
+                     <div className="flex-1"><input className="w-full border p-3 rounded-lg bg-white" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Fabric Code (Type/Select)"/><datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist></div>
+                     <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Sub Code" value={item.subCode} onChange={e => setItem({...item, subCode: e.target.value})} />
+                     <input className="border p-3 rounded-lg flex-1 bg-white" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
+                     <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="M" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} />
+                     <input type="number" className="border p-3 rounded-lg w-24 bg-white" placeholder="€/M" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} />
+                     <button onClick={addItem} className="bg-emerald-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-emerald-200">Add</button>
                   </div>
                   {newPurchase.items.map((i, idx) => (
                      <div key={idx} className="flex justify-between items-center border-t border-emerald-100 py-2"><span className="text-emerald-900 font-medium">{i.fabricCode} {i.subCode} ({i.description})</span><span className="text-emerald-700">{i.meters}m x €{i.pricePerMeter} = €{i.totalPrice.toFixed(2)}</span><button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></div>
@@ -1083,19 +871,19 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
           </div>
           
           <div className="bg-orange-50 p-6 rounded-xl mb-6">
-              <h4 className="font-bold text-orange-800 mb-4 text-sm uppercase">Expense Items</h4>
-              <div className="flex gap-4 mb-4 items-end">
-                 <div className="flex-1"><label className="text-xs font-bold text-slate-400 uppercase">Description</label><input className="w-full border p-3 rounded-lg bg-white" value={currentItem.description} onChange={e => setCurrentItem({ ...currentItem, description: e.target.value })} /></div>
-                 <div className="w-32"><label className="text-xs font-bold text-slate-400 uppercase">Net €</label><input type="number" className="w-full border p-3 rounded-lg bg-white" value={currentItem.netPrice} onChange={e => setCurrentItem({ ...currentItem, netPrice: e.target.value })} /></div>
-                 <button onClick={addItem} className="bg-orange-600 text-white px-6 py-3 rounded-lg font-bold shadow-lg">Add</button>
-              </div>
-              {newExpense.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center border-t border-orange-200 py-2">
-                      <span className="text-orange-900">{item.description}</span>
-                      <span className="text-orange-900 font-bold">€{item.netPrice.toFixed(2)}</span>
-                      <button onClick={() => setNewExpense({...newExpense, items: newExpense.items.filter((_, i) => i !== idx)})} className="text-red-500"><Trash2 size={16}/></button>
-                  </div>
-              ))}
+             <h4 className="font-bold text-orange-800 mb-4 text-sm uppercase">Expense Items</h4>
+             <div className="flex gap-4 mb-4 items-end">
+                <div className="flex-1"><label className="text-xs font-bold text-slate-400 uppercase">Description</label><input className="w-full border p-3 rounded-lg bg-white" value={currentItem.description} onChange={e => setCurrentItem({ ...currentItem, description: e.target.value })} /></div>
+                <div className="w-32"><label className="text-xs font-bold text-slate-400 uppercase">Net €</label><input type="number" className="w-full border p-3 rounded-lg bg-white" value={currentItem.netPrice} onChange={e => setCurrentItem({ ...currentItem, netPrice: e.target.value })} /></div>
+                <button onClick={addItem} className="bg-orange-600 text-white px-6 py-3 rounded-lg font-bold shadow-lg">Add</button>
+             </div>
+             {newExpense.items.map((item, idx) => (
+                 <div key={idx} className="flex justify-between items-center border-t border-orange-200 py-2">
+                     <span className="text-orange-900">{item.description}</span>
+                     <span className="text-orange-900 font-bold">€{item.netPrice.toFixed(2)}</span>
+                     <button onClick={() => setNewExpense({...newExpense, items: newExpense.items.filter((_, i) => i !== idx)})} className="text-red-500"><Trash2 size={16}/></button>
+                 </div>
+             ))}
           </div>
 
           <div className="flex justify-end gap-3">
@@ -1298,7 +1086,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.6</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.1</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
