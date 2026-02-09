@@ -121,7 +121,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.10 Excel Import Edition</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.11 Fixed Stock Deduction</p>
       </div>
     </div>
   );
@@ -722,12 +722,16 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   );
 };
 
+// --- UPDATED SALES INVOICES (v5.10: Fixed Stock Deduction) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] });
+  
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
+  
+  // Helper to find the currently selected fabric to show its rolls
   const selectedFabric = fabrics.find(f => f.mainCode === item.fabricCode);
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
@@ -746,10 +750,88 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
       setShowAdd(true); 
   };
 
-  const addItem = () => { if (item.rollId && item.meters && item.pricePerMeter) { const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); if (!roll) return; const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); setNewOrder({ ...newOrder, items: [...(newOrder.items||[]), { ...item, subCode: roll.subCode, description: roll.description, totalPrice: total }] }); setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); }};
-  const deductStock = async (orderItems) => { for (const orderItem of orderItems) { const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode); if(fabric) { const updatedRolls = fabric.rolls.map(r => { if(r.rollId == orderItem.rollId) { return { ...r, meters: Math.max(0, parseFloat(r.meters) - parseFloat(orderItem.meters)) }; } return r; }); await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls }); }}};
-  const saveOrder = async () => { const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); const vat = subtotal * (newOrder.vatRate / 100); const final = subtotal + vat; const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; if (editingId) { await updateDoc(doc(db, "orders", editingId), orderToSave); } else { if (newOrder.status === 'Completed') await deductStock(newOrder.items); await addDoc(collection(db, "orders"), orderToSave); } setShowAdd(false); setEditingId(null); setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] }); };
-  const updateStatus = async (id, newStatus) => { const order = orders.find(o => o.id === id); if (order.status !== 'Completed' && newStatus === 'Completed') await deductStock(order.items); await updateDoc(doc(db, "orders", id), { status: newStatus }); };
+  const addItem = () => { 
+    if (item.rollId && item.meters && item.pricePerMeter) { 
+        // Find the specific roll to get its details
+        const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); 
+        if (!roll) return; 
+
+        const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); 
+        
+        setNewOrder({ 
+            ...newOrder, 
+            items: [...(newOrder.items||[]), { 
+                ...item, 
+                subCode: roll.subCode, // Important: Save the Roll Code
+                description: roll.description,
+                designCol: roll.designCol || '', // Capture new fields if available
+                rollColor: roll.rollColor || '',
+                totalPrice: total 
+            }] 
+        }); 
+        setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); 
+    }
+  };
+
+  // --- CRITICAL FUNCTION: DEDUCT STOCK ---
+  const deductStock = async (orderItems) => { 
+    for (const orderItem of orderItems) { 
+        // 1. Find the Fabric
+        const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode); 
+        if(fabric) { 
+            // 2. Find the specific Roll inside that fabric and subtract meters
+            const updatedRolls = fabric.rolls.map(r => { 
+                // Loose equality (==) in case rollId is string vs number
+                if(r.rollId == orderItem.rollId) { 
+                    const currentMeters = parseFloat(r.meters || 0);
+                    const soldMeters = parseFloat(orderItem.meters || 0);
+                    const newMeters = Math.max(0, currentMeters - soldMeters);
+                    return { ...r, meters: newMeters }; 
+                } 
+                return r; 
+            }); 
+            // 3. Update the Database
+            await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls }); 
+        }
+    }
+  };
+
+  const saveOrder = async () => { 
+    const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); 
+    const vat = subtotal * (newOrder.vatRate / 100); 
+    const final = subtotal + vat; 
+    const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; 
+    
+    if (editingId) { 
+        // Note: If editing, we usually don't re-deduct stock to avoid double counting
+        // unless status changes from Pending -> Completed.
+        // For simplicity in this version, we update the order record.
+        const oldOrder = orders.find(o => o.id === editingId);
+        if (oldOrder.status !== 'Completed' && newOrder.status === 'Completed') {
+            await deductStock(newOrder.items);
+        }
+        await updateDoc(doc(db, "orders", editingId), orderToSave); 
+    } else { 
+        // If creating NEW order and it is immediately Completed
+        if (newOrder.status === 'Completed') {
+            await deductStock(newOrder.items); 
+        }
+        await addDoc(collection(db, "orders"), orderToSave); 
+    } 
+    setShowAdd(false); 
+    setEditingId(null); 
+    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] }); 
+  };
+
+  const updateStatus = async (id, newStatus) => { 
+    const order = orders.find(o => o.id === id); 
+    // Only deduct if moving to Completed
+    if (order.status !== 'Completed' && newStatus === 'Completed') {
+        await deductStock(order.items); 
+    }
+    await updateDoc(doc(db, "orders", id), { status: newStatus }); 
+  };
+
   const deleteOrder = async (id) => { if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id)); }
 
   return (
@@ -778,16 +860,58 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
           </div>
+          
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
-            <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Order Items</h4>
+            <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Select Stock to Sell</h4>
             <div className="flex gap-4 mb-4">
-              <select className="border p-3 rounded-lg flex-1 bg-white" value={item.fabricCode} onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })}><option value="">Select Fabric</option>{fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode} - {f.name}</option>)}</select>
-              <select className="border p-3 rounded-lg flex-1 bg-white" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}><option value="">Select Roll</option>{selectedFabric?.rolls?.map(r => <option key={r.rollId} value={r.rollId}>#{r.rollId} - {r.subCode} ({r.meters}m) {r.description}</option>)}</select>
+              {/* 1. Select Fabric */}
+              <div className="flex-1">
+                  <select className="w-full border p-3 rounded-lg bg-white" value={item.fabricCode} onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })}>
+                    <option value="">-- Select Fabric --</option>
+                    {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode} - {f.name}</option>)}
+                  </select>
+              </div>
+
+              {/* 2. Select Specific Roll (Enhanced Dropdown) */}
+              <div className="flex-1">
+                  <select className="w-full border p-3 rounded-lg bg-white" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}>
+                    <option value="">-- Select Roll --</option>
+                    {selectedFabric?.rolls?.map(r => (
+                        <option key={r.rollId} value={r.rollId}>
+                            {r.subCode} | {r.rollColor ? r.rollColor : 'No Color'} | {r.meters}m Available
+                        </option>
+                    ))}
+                  </select>
+              </div>
+
               <input type="number" placeholder="Meters" className="border p-3 rounded-lg w-32 bg-white" value={item.meters} onChange={e => setItem({ ...item, meters: e.target.value })} />
               <input type="number" placeholder="Price/M" className="border p-3 rounded-lg w-32 bg-white" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} />
               <button onClick={addItem} className="bg-blue-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-blue-200">Add</button>
             </div>
-            {(newOrder.items||[]).length > 0 && <div className="bg-white rounded-lg border overflow-hidden"><table className="w-full text-sm"><thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3">Item</th><th className="text-right p-3">Details</th><th className="text-right p-3">Total</th><th className="text-right p-3"></th></tr></thead><tbody>{(newOrder.items||[]).map((i, idx) => (<tr key={idx} className="border-t"><td className="p-3 font-medium text-slate-700">{i.fabricCode} (Roll #{i.rollId})</td><td className="p-3 text-right text-slate-500">{i.meters}m x €{i.pricePerMeter}</td><td className="p-3 text-right font-bold text-slate-800">€{(parseFloat(i.totalPrice)||0).toFixed(2)}</td><td className="p-3 text-right"><button onClick={() => setNewOrder({...newOrder, items: newOrder.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div>}
+
+            {/* List Items */}
+            {(newOrder.items||[]).length > 0 && (
+                <div className="bg-white rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3">Item</th><th className="text-right p-3">Details</th><th className="text-right p-3">Total</th><th className="text-right p-3"></th></tr></thead>
+                        <tbody>
+                            {(newOrder.items||[]).map((i, idx) => (
+                                <tr key={idx} className="border-t">
+                                    <td className="p-3 font-medium text-slate-700">
+                                        <span className="font-bold">{i.fabricCode}</span>
+                                        <span className="text-slate-400 mx-2">|</span>
+                                        <span className="text-blue-600">{i.subCode}</span>
+                                        {i.rollColor && <span className="text-xs text-slate-400 ml-2">({i.rollColor})</span>}
+                                    </td>
+                                    <td className="p-3 text-right text-slate-500">{i.meters}m x €{i.pricePerMeter}</td>
+                                    <td className="p-3 text-right font-bold text-slate-800">€{(parseFloat(i.totalPrice)||0).toFixed(2)}</td>
+                                    <td className="p-3 text-right"><button onClick={() => setNewOrder({...newOrder, items: newOrder.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
           </div>
           <div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={saveOrder} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">Save Invoice</button></div>
         </div>
@@ -797,7 +921,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Order ID</th><th className="p-4">Invoice</th><th className="p-4">Customer</th><th className="p-4">Date</th><th className="p-4 text-right">Total</th><th className="p-4 text-center">Status</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {/* FIXED: BLANK SCREEN (|| []) */}
             {(orders||[]).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd).map(order => (
               <tr key={order.id} className="hover:bg-slate-50 transition-colors">
                 <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId || '-'}</td>
@@ -805,7 +928,22 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 <td className="p-4 font-bold text-slate-800">{order.customer}</td>
                 <td className="p-4 text-slate-500">{order.date}</td>
                 <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(order.finalPrice)||0).toFixed(2)}</td>
-                <td className="p-4 text-center"><span className={`px-3 py-1 rounded-full text-xs font-bold ${order.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : order.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{order.status}</span></td>
+                <td className="p-4 text-center">
+                    {/* Status Dropdown Logic */}
+                    {order.status === 'Completed' ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Completed</span>
+                    ) : (
+                        <select 
+                            value={order.status} 
+                            onChange={(e) => updateStatus(order.id, e.target.value)}
+                            className={`px-2 py-1 rounded text-xs font-bold border ${order.status === 'Cancelled' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
+                        >
+                            <option value="Pending">Pending</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    )}
+                </td>
                 <td className="p-4 text-right pr-6 flex justify-end gap-3">
                   <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View"><Eye size={18}/></button>
                   <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
