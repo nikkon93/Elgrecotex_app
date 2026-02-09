@@ -121,7 +121,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.8 PDF Solution</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.10 Excel Import Edition</p>
       </div>
     </div>
   );
@@ -1330,7 +1330,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise v5.8</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.10</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
