@@ -1427,7 +1427,8 @@ const FabricERP = () => {
   const [customers, setCustomers] = useState([]);
   const [samples, setSamples] = useState([]);
 
-  useEffect(() => {
+  // --- INSIDE THE MAIN COMPONENT (FabricERP) ---
+useEffect(() => {
     // Dynamically Load PDF Script
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
@@ -1435,15 +1436,56 @@ const FabricERP = () => {
     document.body.appendChild(script);
 
     if (!isAuthenticated) return;
-    const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => setFabrics(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubPur = onSnapshot(query(collection(db, 'purchases'), orderBy('date', 'desc')), (snap) => setPurchases(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+    // --- SAFER DATA LOADING (Prevents White Screen Crashes) ---
+    const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => {
+        const safeData = snap.docs.map(d => {
+            const data = d.data();
+            // Sanitize Rolls: Ensure meters and price are numbers
+            const safeRolls = (data.rolls || []).map(r => ({
+                ...r,
+                meters: parseFloat(r.meters) || 0,
+                price: parseFloat(r.price) || 0
+            }));
+            return { id: d.id, ...data, rolls: safeRolls };
+        });
+        setFabrics(safeData);
+    });
+
+    const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => {
+        const safeData = snap.docs.map(d => {
+             const data = d.data();
+             return { 
+                 id: d.id, 
+                 ...data, 
+                 subtotal: parseFloat(data.subtotal) || 0,
+                 finalPrice: parseFloat(data.finalPrice) || 0
+             };
+        });
+        setOrders(safeData);
+    });
+
+    const unsubPur = onSnapshot(query(collection(db, 'purchases'), orderBy('date', 'desc')), (snap) => {
+         const safeData = snap.docs.map(d => {
+             const data = d.data();
+             return { 
+                 id: d.id, 
+                 ...data, 
+                 subtotal: parseFloat(data.subtotal) || 0,
+                 finalPrice: parseFloat(data.finalPrice) || 0
+             };
+        });
+        setPurchases(safeData);
+    });
+    
+    // ... keep the rest of your listeners (expenses, suppliers, etc.) ...
     const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+
     return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); document.body.removeChild(script); };
-  }, [isAuthenticated]);
+}, [isAuthenticated]);
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
 
