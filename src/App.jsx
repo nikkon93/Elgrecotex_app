@@ -326,139 +326,150 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- DASHBOARD (v5.13: With Fixed Excel Export & Split Columns) ---
-const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
+// --- PRO DASHBOARD (v5.16: Detailed Finance + Full Backup Export) ---
+const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
   
-  // --- 1. SAFE METRIC CALCULATIONS ---
+  // 1. FILTER DATA BY DATE RANGE
   const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
   const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
   const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
-  // Calculate Totals
-  const totalStockMeters = fabrics.reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
+  // 2. CALCULATE METRICS
+  const totalStockMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
   
-  // Calculate Stock Value (Weighted Average Logic)
-  const totalStockValue = fabrics.reduce((total, f) => {
-      let totalVal = 0, totalMet = 0;
-      purchases.forEach(p => (p.items||[]).forEach(i => {
-          if(i.fabricCode === f.mainCode) {
-              totalVal += (parseFloat(i.meters)||0) * (parseFloat(i.pricePerMeter)||0);
-              totalMet += (parseFloat(i.meters)||0);
-          }
-      }));
-      (f.rolls||[]).forEach(r => {
-           if(parseFloat(r.price) > 0) {
-               totalVal += (parseFloat(r.meters)||0) * (parseFloat(r.price)||0);
-               totalMet += (parseFloat(r.meters)||0);
-           }
-      });
-      const avgCost = totalMet > 0 ? totalVal / totalMet : 0;
-      const fabricValue = (f.rolls || []).reduce((sum, r) => {
-          const price = parseFloat(r.price) > 0 ? parseFloat(r.price) : avgCost;
-          return sum + ((parseFloat(r.meters) || 0) * price);
-      }, 0);
-      return total + fabricValue;
-  }, 0);
-
-  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.finalPrice) || 0), 0);
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + filteredPurchases.reduce((sum, p) => sum + (parseFloat(p.finalPrice) || 0), 0);
-  const netProfit = totalRevenue - totalExpenses;
+  const netPurchases = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
+  const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.amount || e.netPrice) || 0), 0);
+  const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
+  
+  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
+  const vatCollected = filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0);
+  
+  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice || e.amount) || 0), 0);
+  const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-  // --- 2. UPDATED EXCEL EXPORT (SPLIT COLUMNS) ---
-  const handleExport = () => {
+  // 3. FULL BACKUP EXPORT (ALL 6 SECTIONS)
+  const handleFullExport = () => {
     try {
-      // INVENTORY SHEET
-      const inventoryData = fabrics.flatMap(f => (f.rolls || []).map(r => ({
-        "Fabric Code": f.mainCode,
-        "Roll Code": r.subCode || r.rollCode || '-', // Split Column
-        "Color": r.rollColor || f.color,
-        "Description": r.description || '',
-        "Meters": parseFloat(r.meters || 0),
-        "Price": parseFloat(r.price || 0),
-        "Total Value": (parseFloat(r.meters || 0) * parseFloat(r.price || 0)).toFixed(2),
-        "Location": r.location || 'Warehouse'
+      const wb = XLSX.utils.book_new();
+      
+      // A. Inventory (Split Columns)
+      const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
+        "Fabric Code": f.mainCode, 
+        "Name": f.name, 
+        "Roll Code": r.subCode || r.rollCode, 
+        "Meters": parseFloat(r.meters || 0), 
+        "Price": parseFloat(r.price || 0), 
+        "Location": r.location 
       })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
 
-      // PURCHASES SHEET (Split Columns)
-      const purchasesData = purchases.flatMap(p => (p.items || []).map(i => ({
-        "Date": p.date,
-        "Supplier": p.supplier,
-        "Invoice No": p.invoiceNo,
-        "Fabric Code": i.fabricCode,          // <--- Separate Column
-        "Roll Code": i.subCode || i.rollCode, // <--- Separate Column
-        "Description": i.description,
-        "Meters": parseFloat(i.meters || 0),
-        "Price": parseFloat(i.pricePerMeter || 0),
-        "Total": parseFloat(i.totalPrice || 0)
-      })));
-
-      // SALES SHEET (Split Columns)
-      const salesData = orders.flatMap(o => (o.items || []).map(i => ({
-        "Date": o.date,
-        "Customer": o.customer,
-        "Invoice No": o.invoiceNo,
-        "Fabric Code": i.fabricCode,          // <--- Separate Column
-        "Roll Code": i.subCode || i.rollCode, // <--- Separate Column
-        "Meters": parseFloat(i.meters || 0),
-        "Price": parseFloat(i.pricePerMeter || 0),
-        "Total": parseFloat(i.totalPrice || 0),
+      // B. Sales (Split Columns)
+      const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
+        "Date": o.date, 
+        "Invoice": o.invoiceNo, 
+        "Customer": o.customer, 
+        "Fabric Code": i.fabricCode, 
+        "Roll Code": i.subCode || i.rollCode, 
+        "Qty": i.meters, 
+        "Net": i.totalPrice,
         "Status": o.status
       })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
-      // Create Workbook
-      const wb = XLSX.utils.book_new();
-      if(inventoryData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), "Inventory");
-      if(purchasesData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchasesData), "Purchases");
-      if(salesData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), "Sales");
+      // C. Purchases (Split Columns)
+      const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
+        "Date": p.date, 
+        "Supplier": p.supplier, 
+        "Invoice": p.invoiceNo, 
+        "Fabric Code": i.fabricCode, 
+        "Roll Code": i.subCode || i.rollCode, 
+        "Qty": i.meters, 
+        "Net": i.totalPrice 
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
-      XLSX.writeFile(wb, `ElGrecoTex_Export_v5.13_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (e) {
-      console.error("Export Error:", e);
-      alert("Error exporting data. Please check console.");
-    }
+      // D. Samples
+      const sam = samples.flatMap(s => (s.items || []).map(i => ({ 
+        "Date": s.date, 
+        "Customer": s.customer, 
+        "Fabric": i.fabricCode, 
+        "Meters": i.meters,
+        "Notes": s.notes 
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
+
+      // E. Contacts
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
+
+      XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) { alert("Export failed: " + e.message); }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="flex justify-between items-center">
+    <div className="space-y-8 animate-in fade-in">
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-          <p className="text-slate-500">Real-time business overview</p>
+          <h2 className="text-2xl font-bold text-slate-800">Financial Overview</h2>
+          <p className="text-slate-500">Selected: {dateRangeStart} to {dateRangeEnd}</p>
         </div>
-        <button onClick={handleExport} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center gap-2">
-           <FileSpreadsheet size={20}/> Export All Data
+        <button onClick={handleFullExport} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 hover:bg-emerald-700 transition-all">
+          <FileSpreadsheet size={20}/> Export Full Backup
         </button>
       </div>
 
       {/* METRIC CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Package size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Total Stock</h3></div>
+        <div className="bg-white p-6 rounded-2xl border shadow-sm">
+          <div className="flex items-center gap-3 mb-2"><Package className="text-blue-500" size={20}/><h3 className="text-slate-400 font-bold text-xs uppercase">Stock Meters</h3></div>
           <p className="text-3xl font-bold text-slate-800">{totalStockMeters.toFixed(1)}m</p>
         </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Euro size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Stock Value</h3></div>
-          <p className="text-3xl font-bold text-slate-800">€{totalStockValue.toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
+        <div className="bg-white p-6 rounded-2xl border shadow-sm">
+          <div className="flex items-center gap-3 mb-2"><TrendingUp className="text-emerald-500" size={20}/><h3 className="text-slate-400 font-bold text-xs uppercase">Net Revenue</h3></div>
+          <p className="text-3xl font-bold text-emerald-600">€{totalRevenue.toFixed(2)}</p>
         </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => onNavigate('salesinvoices')}>
-          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><FileText size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Pending Orders</h3></div>
+        <div className="bg-white p-6 rounded-2xl border shadow-sm">
+          <div className="flex items-center gap-3 mb-2"><Hash className="text-amber-500" size={20}/><h3 className="text-slate-400 font-bold text-xs uppercase">Pending Orders</h3></div>
           <p className="text-3xl font-bold text-slate-800">{pendingOrders}</p>
         </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-purple-50 text-purple-600 rounded-xl"><Wallet size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Net Profit</h3></div>
-          <p className={`text-3xl font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{netProfit.toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
+        <div className="bg-white p-6 rounded-2xl border shadow-sm">
+          <div className="flex items-center gap-3 mb-2"><Wallet className="text-purple-500" size={20}/><h3 className="text-slate-400 font-bold text-xs uppercase">Net Profit</h3></div>
+          <p className={`text-3xl font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{netProfit.toFixed(2)}</p>
         </div>
       </div>
 
-      {/* QUICK ACTIONS */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      {/* DETAILED MONEY FLOW */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-2xl border shadow-sm">
+          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">Money Out (Expenses)</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between border-b pb-2"><span>Fabric Purchases (Net)</span><span className="font-bold">€{netPurchases.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2"><span>Other Expenses (Net)</span><span className="font-bold">€{netExpenses.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2 text-slate-400 italic"><span>VAT Paid to Suppliers</span><span>€{vatPaid.toFixed(2)}</span></div>
+            <div className="pt-4 flex justify-between text-xl font-black text-red-600"><span>TOTAL CASH OUT</span><span>€{totalCashOut.toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-2xl border shadow-sm">
+          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">Money In (Income)</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between border-b pb-2"><span>Sales Revenue (Net)</span><span className="font-bold text-emerald-600">€{totalRevenue.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2 text-slate-400 italic"><span>VAT Collected from Customers</span><span>€{vatCollected.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2"><span>VAT Balance (Payable)</span><span className={`font-bold ${vatCollected - vatPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>€{(vatCollected - vatPaid).toFixed(2)}</span></div>
+            <div className="pt-4 flex justify-between text-xl font-black text-slate-900"><span>GROSS TOTAL</span><span>€{(totalRevenue + vatCollected).toFixed(2)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK ACTIONS BUTTONS */}
+      <div className="bg-white p-6 rounded-2xl border shadow-sm">
          <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button onClick={() => onNavigate('sales')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Create invoice</div></button>
-            <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add stock</div></button>
-            <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Check Stock</div><div className="text-xs text-slate-400">View fabrics</div></button>
-            <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Send Samples</div><div className="text-xs text-slate-400">Log shipment</div></button>
+            <button onClick={() => onNavigate('sales')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Invoice & Stock</div></button>
+            <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add Stock</div></button>
+            <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Stock Status</div><div className="text-xs text-slate-400">View Rolls</div></button>
+            <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Samples</div><div className="text-xs text-slate-400">Log Shipments</div></button>
          </div>
       </div>
     </div>
