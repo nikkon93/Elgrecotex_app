@@ -488,7 +488,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     </div>
   );
 };
-// --- 5. DEEP SEARCH & HIGHLIGHT INVENTORY (v5.18: Search + WORKING EDIT) ---
+// --- 5. FULL INVENTORY TAB (v5.19: Search + Fabric Edit + Roll Edit + Images) ---
 
 const HighlightText = ({ text, highlight }) => {
   if (!highlight || !highlight.trim()) return <span>{text || ''}</span>;
@@ -498,12 +498,8 @@ const HighlightText = ({ text, highlight }) => {
     <span>
       {parts.map((part, i) => 
         regex.test(part) ? (
-          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">
-            {part}
-          </mark>
-        ) : (
-          part
-        )
+          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">{part}</mark>
+        ) : (part)
       )}
     </span>
   );
@@ -512,7 +508,7 @@ const HighlightText = ({ text, highlight }) => {
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
-  const [editingFabric, setEditingFabric] = useState(null); // State to hold fabric being edited
+  const [editingFabric, setEditingFabric] = useState(null);
   const [addRollOpen, setAddRollOpen] = useState(null);
   const [editRollMode, setEditRollMode] = useState(false);
   
@@ -523,68 +519,36 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   const [currentRoll, setCurrentRoll] = useState({ 
     rollId: '', subCode: '', description: '', designCol: '', rollColor: '', 
     quality: '', qualityNo: '', netKgr: '', width: '', meters: '', 
-    location: '', price: ''
+    location: '', price: '', image: '' 
   });
 
-  // SAVE UPDATED FABRIC TO FIREBASE
+  // --- ACTIONS ---
   const handleUpdateFabric = async () => {
-    if (editingFabric && editingFabric.mainCode) {
+    if (editingFabric) {
       const { id, ...data } = editingFabric;
       await updateDoc(doc(db, "fabrics", id), data);
       setEditingFabric(null);
     }
   };
 
-  const filtered = (fabrics || []).filter(f => {
-    const search = searchTerm.toLowerCase().trim();
-    if (!search) return true;
-    const mainMatch = f.mainCode?.toLowerCase().includes(search) || f.name?.toLowerCase().includes(search);
-    const rollMatch = (f.rolls || []).some(r => 
-      r.subCode?.toLowerCase().includes(search) || 
-      r.description?.toLowerCase().includes(search) ||
-      r.rollCode?.toLowerCase().includes(search)
-    );
-    return mainMatch || rollMatch;
-  });
-
-  const handleAddFabric = async () => { 
-    if(newFabricData.mainCode) { 
-      await addDoc(collection(db, "fabrics"), { ...newFabricData, rolls: [] }); 
-      setNewFabricData({ mainCode: '', name: '', color: '', supplier: '', salePrice: '' }); 
-      setShowAddFabric(false); 
-    }
-  };
-
-  const handleDeleteFabric = async (id) => { 
-    if(window.confirm("Delete this fabric?")) await deleteDoc(doc(db, "fabrics", id)); 
-  };
-  
-  const openAddRoll = (fabricId) => { 
-      setAddRollOpen(fabricId); 
-      setEditRollMode(false); 
-      setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '' }); 
-  }
-  
-  const openEditRoll = (fabricId, roll) => { 
-      setAddRollOpen(fabricId); 
-      setEditRollMode(true); 
-      setCurrentRoll({ ...roll }); 
-  }
-  
   const handleSaveRoll = async (fabricId) => {
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
-      let updatedRolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
-      if(editRollMode) { 
-        updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r); 
-      } else { 
-        updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }]; 
+      let updatedRolls = Array.isArray(fabric?.rolls) ? [...fabric.rolls] : [];
+      
+      if(editRollMode) {
+        updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r);
+      } else {
+        updatedRolls.push({ ...currentRoll, rollId: Date.now() });
       }
+      
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
+      setEditRollMode(false);
+      setCurrentRoll({ rollId: '', subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '', image: '' });
     }
   };
-  
+
   const handleDeleteRoll = async (fabricId, rollId) => { 
     if(!window.confirm("Delete this roll?")) return;
     const fabric = fabrics.find(f => f.id === fabricId);
@@ -592,112 +556,113 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls }); 
   };
 
+  const filtered = (fabrics || []).filter(f => {
+    const s = searchTerm.toLowerCase().trim();
+    if (!s) return true;
+    return f.mainCode?.toLowerCase().includes(s) || f.name?.toLowerCase().includes(s) ||
+           (f.rolls || []).some(r => r.subCode?.toLowerCase().includes(s) || r.description?.toLowerCase().includes(s));
+  });
+
   return (
     <div className="space-y-6">
-      {/* SEARCH BAR */}
+      {/* SEARCH & NEW FABRIC */}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-4 w-full">
-            <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
-            <input 
-              className="w-full bg-transparent outline-none font-medium text-slate-700" 
-              placeholder="Search (e.g. V-05)..." 
-              value={searchTerm} 
-              onChange={e => setSearchTerm(e.target.value)}
-            />
+            <Search className="text-slate-400" size={20}/>
+            <input className="w-full bg-transparent outline-none font-medium" placeholder="Search by Code, Name, or Roll..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
-          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 shadow-md flex gap-2"><Plus size={20}/> New Fabric</button>
+          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
       </div>
 
-      {/* EDIT FABRIC MODAL WINDOW */}
+      {/* FABRIC EDIT MODAL */}
       {editingFabric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full animate-in zoom-in duration-200">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full">
             <h3 className="text-xl font-black text-slate-800 mb-6">Edit Fabric Details</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="text-[10px] font-black text-slate-400 uppercase">Main Code</label>
-                <input className="w-full border-2 p-3 rounded-xl mt-1 font-bold" value={editingFabric.mainCode} onChange={e => setEditingFabric({...editingFabric, mainCode: e.target.value})} /></div>
-                <div><label className="text-[10px] font-black text-slate-400 uppercase">Supplier</label>
-                <select className="w-full border-2 p-3 rounded-xl mt-1 bg-slate-50" value={editingFabric.supplier} onChange={e => setEditingFabric({...editingFabric, supplier: e.target.value})}>
+                <input className="border-2 p-3 rounded-xl font-bold" value={editingFabric.mainCode} onChange={e => setEditingFabric({...editingFabric, mainCode: e.target.value})} placeholder="Main Code" />
+                <select className="border-2 p-3 rounded-xl bg-slate-50" value={editingFabric.supplier} onChange={e => setEditingFabric({...editingFabric, supplier: e.target.value})}>
                   {(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                </select></div>
+                </select>
               </div>
-              <div><label className="text-[10px] font-black text-slate-400 uppercase">Fabric Name</label>
-              <input className="w-full border-2 p-3 rounded-xl mt-1" value={editingFabric.name} onChange={e => setEditingFabric({...editingFabric, name: e.target.value})} /></div>
+              <input className="w-full border-2 p-3 rounded-xl" value={editingFabric.name} onChange={e => setEditingFabric({...editingFabric, name: e.target.value})} placeholder="Fabric Name" />
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="text-[10px] font-black text-slate-400 uppercase">Color</label>
-                <input className="w-full border-2 p-3 rounded-xl mt-1" value={editingFabric.color} onChange={e => setEditingFabric({...editingFabric, color: e.target.value})} /></div>
-                <div><label className="text-[10px] font-black text-slate-400 uppercase">Sale Price (€)</label>
-                <input className="w-full border-2 p-3 rounded-xl mt-1 font-mono font-bold" type="number" value={editingFabric.salePrice} onChange={e => setEditingFabric({...editingFabric, salePrice: e.target.value})} /></div>
+                <input className="border-2 p-3 rounded-xl" value={editingFabric.color} onChange={e => setEditingFabric({...editingFabric, color: e.target.value})} placeholder="Color" />
+                <input className="border-2 p-3 rounded-xl font-bold" type="number" value={editingFabric.salePrice} onChange={e => setEditingFabric({...editingFabric, salePrice: e.target.value})} placeholder="Price" />
               </div>
             </div>
             <div className="flex gap-3 mt-8">
-              <button onClick={handleUpdateFabric} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all">SAVE CHANGES</button>
-              <button onClick={() => setEditingFabric(null)} className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-xl font-black hover:bg-slate-200">CANCEL</button>
+              <button onClick={handleUpdateFabric} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black">SAVE</button>
+              <button onClick={() => setEditingFabric(null)} className="flex-1 bg-slate-100 py-4 rounded-xl font-black">CANCEL</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* FABRICS LIST */}
-      <div className="grid grid-cols-1 gap-4">
+      {/* FABRIC LIST */}
+      <div className="space-y-4">
         {filtered.map(fabric => {
           const rolls = Array.isArray(fabric.rolls) ? fabric.rolls : [];
           const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
 
           return (
-            <div key={fabric.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-               <div className="p-5 flex justify-between items-center bg-slate-50/50 border-b">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800">
-                       <HighlightText text={fabric.mainCode} highlight={searchTerm} /> - <HighlightText text={fabric.name} highlight={searchTerm} />
-                    </h3>
-                    <p className="text-slate-500 text-sm">
-                       {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
-                       {fabric.color} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span>
-                    </p>
+            <div key={fabric.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
+              <div className="p-5 bg-slate-50 flex justify-between items-center border-b">
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800"><HighlightText text={fabric.mainCode} highlight={searchTerm}/> - <HighlightText text={fabric.name} highlight={searchTerm}/></h3>
+                  <p className="text-sm text-slate-500">{fabric.color} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span></p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-400 hover:text-blue-500"><Pencil size={20}/></button>
+                  <button onClick={() => {setAddRollOpen(fabric.id); setEditRollMode(false);}} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm"><Plus size={16}/> Roll</button>
+                </div>
+              </div>
+
+              {/* ADD/EDIT ROLL PANEL */}
+              {addRollOpen === fabric.id && (
+                <div className="p-6 bg-amber-50 border-b animate-in slide-in-from-top duration-200">
+                  <h4 className="font-bold text-amber-800 mb-4">{editRollMode ? 'Edit Roll' : 'Add New Roll'}</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <input placeholder="Roll Code" className="p-3 border-2 rounded-xl bg-white" value={currentRoll.subCode} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} />
+                    <input placeholder="Meters" type="number" className="p-3 border-2 rounded-xl bg-white" value={currentRoll.meters} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} />
+                    <input placeholder="Quality" className="p-3 border-2 rounded-xl bg-white" value={currentRoll.quality} onChange={e => setCurrentRoll({...currentRoll, quality: e.target.value})} />
+                    <input placeholder="Design/Col" className="p-3 border-2 rounded-xl bg-white" value={currentRoll.designCol} onChange={e => setCurrentRoll({...currentRoll, designCol: e.target.value})} />
                   </div>
                   <div className="flex gap-2">
-                      <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><Pencil size={20}/></button>
-                      <button onClick={() => openAddRoll(fabric.id)} className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-lg font-bold border border-emerald-100 flex items-center gap-2"><Plus size={16}/> Roll</button>
-                      <button onClick={() => handleDeleteFabric(fabric.id)} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={20}/></button>
+                    <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold">Save Roll</button>
+                    <button onClick={() => setAddRollOpen(null)} className="bg-white border-2 px-8 py-3 rounded-xl font-bold text-slate-400">Cancel</button>
                   </div>
-               </div>
-               
-               <div className="overflow-x-auto">
-                 <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
-                        <tr>
-                            <th className="p-3 pl-6">Roll Code</th>
-                            <th className="p-3">Description</th>
-                            <th className="p-3">Meters</th>
-                            <th className="p-3">Price</th>
-                            <th className="p-3 text-right pr-6">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {rolls.map((roll, idx) => {
-                          const isMatch = searchTerm && roll.subCode?.toLowerCase().includes(searchTerm.toLowerCase());
-                          return (
-                            <tr key={roll.rollId || idx} className={isMatch ? "bg-yellow-50 border-l-4 border-yellow-400" : "hover:bg-slate-50"}>
-                               <td className="p-3 pl-6 font-bold text-emerald-600">
-                                  <HighlightText text={roll.subCode || roll.rollCode} highlight={searchTerm} />
-                                </td>
-                               <td className="p-3 text-slate-500">
-                                  <HighlightText text={roll.description || '-'} highlight={searchTerm} />
-                               </td>
-                               <td className="p-3 font-bold text-slate-800">{(parseFloat(roll.meters) || 0).toFixed(2)}m</td>
-                               <td className="p-3 text-slate-500">€{(parseFloat(roll.price) || 0).toFixed(2)}</td>
-                               <td className="p-3 text-right pr-6 flex justify-end gap-2">
-                                  <button onClick={() => openEditRoll(fabric.id, roll)} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
-                                  <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-500"><Trash2 size={16}/></button>
-                               </td>
-                            </tr>
-                          );
-                      })}
-                    </tbody>
-                 </table>
-               </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-3 pl-6 text-left">Code</th>
+                      <th className="p-3 text-left">Quality</th>
+                      <th className="p-3 text-left">Design/Col</th>
+                      <th className="p-3 text-left">Meters</th>
+                      <th className="p-3 text-right pr-6">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {rolls.map((roll, idx) => (
+                      <tr key={roll.rollId || idx} className={searchTerm && roll.subCode?.toLowerCase().includes(searchTerm.toLowerCase()) ? "bg-yellow-50 border-l-4 border-yellow-400" : "hover:bg-slate-50"}>
+                        <td className="p-3 pl-6 font-bold text-blue-600"><HighlightText text={roll.subCode} highlight={searchTerm}/></td>
+                        <td className="p-3 text-slate-500">{roll.quality || '-'}</td>
+                        <td className="p-3 text-slate-500">{roll.designCol || '-'}</td>
+                        <td className="p-3 font-bold text-slate-800">{parseFloat(roll.meters || 0).toFixed(2)}m</td>
+                        <td className="p-3 text-right pr-6 space-x-3">
+                          <button onClick={() => {setCurrentRoll(roll); setAddRollOpen(fabric.id); setEditRollMode(true);}} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
+                          <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-500"><Trash2 size={16}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })}
