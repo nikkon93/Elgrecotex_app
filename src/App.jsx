@@ -1437,55 +1437,54 @@ useEffect(() => {
 
     if (!isAuthenticated) return;
 
-    // --- SAFER DATA LOADING (Prevents White Screen Crashes) ---
+    // --- 1. LOAD FABRICS ---
     const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => {
-        const safeData = snap.docs.map(d => {
-            const data = d.data();
-            // Sanitize Rolls: Ensure meters and price are numbers
-            const safeRolls = (data.rolls || []).map(r => ({
-                ...r,
-                meters: parseFloat(r.meters) || 0,
-                price: parseFloat(r.price) || 0
-            }));
-            return { id: d.id, ...data, rolls: safeRolls };
-        });
-        setFabrics(safeData);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setFabrics(data);
     });
 
+    // --- 2. LOAD ORDERS ---
     const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => {
-        const safeData = snap.docs.map(d => {
-             const data = d.data();
-             return { 
-                 id: d.id, 
-                 ...data, 
-                 subtotal: parseFloat(data.subtotal) || 0,
-                 finalPrice: parseFloat(data.finalPrice) || 0
-             };
-        });
-        setOrders(safeData);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setOrders(data);
     });
 
+    // --- 3. LOAD PURCHASES ---
     const unsubPur = onSnapshot(query(collection(db, 'purchases'), orderBy('date', 'desc')), (snap) => {
-         const safeData = snap.docs.map(d => {
-             const data = d.data();
-             return { 
-                 id: d.id, 
-                 ...data, 
-                 subtotal: parseFloat(data.subtotal) || 0,
-                 finalPrice: parseFloat(data.finalPrice) || 0
-             };
-        });
-        setPurchases(safeData);
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setPurchases(data);
+    });
+
+    // --- 4. LOAD EXPENSES ---
+    const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setExpenses(data);
     });
     
-    // ... keep the rest of your listeners (expenses, suppliers, etc.) ...
-    const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    // --- 5. LOAD SUPPLIERS ---
+    const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setSuppliers(data);
+    });
+    
+    // --- 6. LOAD CUSTOMERS ---
+    const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCustomers(data);
+    });
+    
+    // --- 7. LOAD SAMPLES ---
+    const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setSamples(data);
+    });
 
-    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); document.body.removeChild(script); };
-}, [isAuthenticated]);
+    // Clean up when leaving
+    return () => { 
+        unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); 
+        if(document.body.contains(script)) document.body.removeChild(script); 
+    };
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
 
