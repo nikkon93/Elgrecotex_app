@@ -149,16 +149,27 @@ const calculateWeightedAverageCost = (mainCode, purchases = [], fabrics = []) =>
   return totalMeters > 0 ? totalValue / totalMeters : 0;
 };
 
-const getSubcodeSummary = (rolls, mainCode, purchases, fabrics) => {
+const getSubcodesSummary = (rolls) => {
   const summary = {};
-  if(!rolls) return [];
-  const avgPrice = calculateWeightedAverageCost(mainCode, purchases, fabrics);
-  rolls.forEach(r => { 
-      if (!summary[r.subCode]) summary[r.subCode] = { meters: 0, count: 0 }; 
-      summary[r.subCode].meters += parseFloat(r.meters || 0); 
-      summary[r.subCode].count += 1; 
+  if (!rolls) return [];
+
+  // Loop through rolls and group them
+  rolls.forEach(r => {
+    // If we haven't seen this subcode yet, start a new entry
+    if (!summary[r.subCode]) {
+        summary[r.subCode] = { meters: 0, count: 0 };
+    }
+    // Add the meters and count
+    summary[r.subCode].meters += parseFloat(r.meters || 0);
+    summary[r.subCode].count += 1;
   });
-  return Object.entries(summary).map(([subCode, data]) => ({ subCode, meters: data.meters, count: data.count, avgPrice }));
+
+  // Convert the summary object back into a list
+  return Object.entries(summary).map(([subCode, data]) => ({
+    subCode,
+    meters: data.meters,
+    count: data.count
+  }));
 };
 
 const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
@@ -173,14 +184,15 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-// --- 4. VIEWERS (With PDF Download) ---
+
+
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   const pdfName = `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <div className="w-full max-w-4xl mb-6 flex justify-between items-center">
+      <div className="w-full max-w-4xl mb-6 flex justify-between items-center print:hidden">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
           
           {/* PDF DOWNLOAD BUTTON */}
@@ -192,49 +204,69 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
       {/* ID 'printable-content' is what gets converted to PDF */}
       <div id="printable-content" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
-           <div>
-             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
-             <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
-             <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
-           </div>
-           <div className="text-right">
-             <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type} INVOICE</h2>
-             <p className="text-slate-500 font-mono mt-1 text-lg">#{invoice.invoiceNo}</p>
-             {invoice.orderId && <p className="text-slate-400 text-xs mt-1 font-mono">Ref: {invoice.orderId}</p>}
-             <p className="text-slate-500 text-sm mt-1">{invoice.date}</p>
-           </div>
+            <div>
+              <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
+              <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Elgrecotex</h1>
+              <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
+            </div>
+            <div className="text-right">
+              <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type} INVOICE</h2>
+              <p className="text-slate-500 font-mono mt-1 text-lg">#{invoice.invoiceNo}</p>
+              {invoice.orderId && <p className="text-slate-400 text-xs mt-1 font-mono">Ref: {invoice.orderId}</p>}
+              <p className="text-slate-500 text-sm mt-1">{invoice.date}</p>
+            </div>
         </div>
+
         <div className="grid grid-cols-2 gap-12 mb-12">
-           <div><h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bill To</h3><p className="text-xl font-bold text-slate-800">{invoice.customer || invoice.supplier || invoice.company}</p>{invoice.vatNumber && <p className="text-sm text-slate-500 mt-1">VAT: {invoice.vatNumber}</p>}</div>
-           <div className="text-right">
-             {invoice.status && (
-               <>
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</h3>
-                <span className={`px-4 py-1 rounded-full text-sm font-bold border ${invoice.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{invoice.status || 'Processed'}</span>
-               </>
-             )}
-           </div>
+            <div><h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bill To</h3><p className="text-xl font-bold text-slate-800">{invoice.customer || invoice.supplier || invoice.company}</p>{invoice.vatNumber && <p className="text-sm text-slate-500 mt-1">VAT: {invoice.vatNumber}</p>}</div>
+            <div className="text-right">
+              {invoice.status && (
+                <>
+                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Status</h3>
+                 <span className={`px-4 py-1 rounded-full text-sm font-bold border ${invoice.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{invoice.status || 'Processed'}</span>
+                </>
+              )}
+            </div>
         </div>
-        <table className="w-full mb-12">
-           <thead><tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><th className="text-left py-4 px-6 rounded-l-lg">Description</th><th className="text-right py-4 px-6">Qty</th><th className="text-right py-4 px-6">Price</th><th className="text-right py-4 px-6 rounded-r-lg">Total</th></tr></thead>
-           <tbody className="divide-y divide-slate-100">
-              {(invoice.items || []).map((item, idx) => (
-                 <tr key={idx}>
-                   <td className="py-4 px-6">
-                     <p className="font-bold text-slate-700">{item.fabricCode || item.description}</p>
-                     <p className="text-xs text-slate-400">{item.subCode} {item.description && item.fabricCode ? item.description : ''}</p>
-                   </td>
-                   <td className="py-4 px-6 text-right font-mono text-slate-600">{item.meters || 1}</td>
-                   <td className="py-4 px-6 text-right font-mono text-slate-600">€{fmt(item.pricePerMeter || item.netPrice)}</td>
-                   <td className="py-4 px-6 text-right font-bold text-slate-800">€{fmt(item.totalPrice || item.finalPrice)}</td>
-                 </tr>
-              ))}
-           </tbody>
-        </table>
-        <div className="flex justify-end"><div className="w-72 space-y-3"><div className="flex justify-between text-slate-500"><span>Subtotal</span><span>€{fmt(invoice.subtotal || invoice.netPrice)}</span></div><div className="flex justify-between text-slate-500"><span>VAT ({invoice.vatRate}%)</span><span>€{fmt(invoice.vatAmount)}</span></div><div className="flex justify-between border-t border-slate-200 pt-4 text-2xl font-bold text-slate-900"><span>Total</span><span>€{fmt(invoice.finalPrice)}</span></div></div></div>
+
+        {/* UPDATED TABLE WITH SEPARATE ROLL CODE COLUMN */}
+        <div className="border rounded-lg overflow-hidden mb-12">
+            <table className="w-full">
+               <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                   <tr>
+                       <th className="text-left py-4 px-4 font-bold">Fabric Code</th>
+                       <th className="text-left py-4 px-4 font-bold">Roll Code</th>
+                       <th className="text-left py-4 px-4 font-bold">Description</th>
+                       <th className="text-center py-4 px-4 font-bold">Qty</th>
+                       <th className="text-right py-4 px-4 font-bold">Price</th>
+                       <th className="text-right py-4 px-4 font-bold">Total</th>
+                   </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-100">
+                  {(invoice.items || []).map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="py-4 px-4 font-bold text-slate-700">{item.fabricCode}</td>
+                        <td className="py-4 px-4 font-mono text-blue-600 text-xs">{item.subCode || item.rollCode || '-'}</td>
+                        <td className="py-4 px-4 text-slate-500 text-sm">{item.description || item.designCol || '-'}</td>
+                        <td className="py-4 px-4 text-center font-mono text-slate-600">{fmt(item.meters)}m</td>
+                        <td className="py-4 px-4 text-right font-mono text-slate-600">€{fmt(item.pricePerMeter || item.price)}</td>
+                        <td className="py-4 px-4 text-right font-bold text-slate-800">€{fmt(item.totalPrice)}</td>
+                      </tr>
+                  ))}
+               </tbody>
+            </table>
+        </div>
+
+        <div className="flex justify-end">
+            <div className="w-72 space-y-3">
+                <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>€{fmt(invoice.subtotal)}</span></div>
+                <div className="flex justify-between text-slate-500"><span>VAT ({invoice.vatRate}%)</span><span>€{fmt(invoice.vatAmount)}</span></div>
+                <div className="flex justify-between border-t border-slate-200 pt-4 text-2xl font-bold text-slate-900"><span>Total</span><span>€{fmt(invoice.finalPrice)}</span></div>
+            </div>
+        </div>
         
         <div className="mt-12 text-center text-xs text-slate-400 border-t pt-4">
-           Thank you for your business.
+            Thank you for your business.
         </div>
       </div>
     </div>
@@ -246,230 +278,187 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <div className="w-full max-w-3xl mb-6 flex justify-between items-center no-print">
+      <div className="w-full max-w-3xl mb-6 flex justify-between items-center print:hidden">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Samples</button>
           <button onClick={() => downloadPDF('printable-content', pdfName)} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-red-700 flex items-center gap-2 animate-bounce"><FileDown size={18}/> Download PDF</button>
       </div>
 
       <div id="printable-content" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200">
         <div className="border-b-2 border-purple-500 pb-8 mb-8 flex justify-between items-start">
-           <div>
-             <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
-             <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1>
-             <p className="text-purple-600 font-bold mt-1">Elgrecotex</p>
-           </div>
-           <div className="text-right"><p className="font-mono text-lg text-slate-600">{sampleLog.date}</p><p className="text-slate-400 text-sm mt-1">Sent via: {sampleLog.carrier || 'Standard Post'}</p></div>
+            <div>
+              <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1>
+              <p className="text-purple-600 font-bold mt-1">Elgrecotex</p>
+            </div>
+            <div className="text-right"><p className="font-mono text-lg text-slate-600">{sampleLog.date}</p><p className="text-slate-400 text-sm mt-1">Sent via: {sampleLog.carrier || 'Standard Post'}</p></div>
         </div>
         <div className="mb-12 bg-purple-50 p-6 rounded-lg border border-purple-100">
-           <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">Prepared For</h3>
-           <p className="text-2xl font-bold text-purple-900">{sampleLog.customer}</p>
-           <p className="text-purple-700 italic mt-1">{sampleLog.notes}</p>
+            <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">Prepared For</h3>
+            <p className="text-2xl font-bold text-purple-900">{sampleLog.customer}</p>
+            <p className="text-purple-700 italic mt-1">{sampleLog.notes}</p>
         </div>
         <table className="w-full mb-12 border-collapse">
-           <thead>
-             <tr className="border-b-2 border-slate-100 text-slate-400 text-sm uppercase">
-               <th className="text-left py-3 px-4">Fabric</th>
-               <th className="text-left py-3 px-4">Details</th>
-               <th className="text-right py-3 px-4">Length</th>
-               <th className="text-right py-3 px-4">Offer Price</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-slate-50">
+            <thead>
+              <tr className="border-b-2 border-slate-100 text-slate-400 text-sm uppercase">
+                <th className="text-left py-3 px-4">Fabric</th>
+                <th className="text-left py-3 px-4">Details</th>
+                <th className="text-right py-3 px-4">Length</th>
+                <th className="text-right py-3 px-4">Offer Price</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
               {(sampleLog.items || []).map((item, idx) => (
-                 <tr key={idx}>
-                   <td className="py-4 px-4 font-bold text-slate-700">{(item || {}).fabricCode || '-'}</td>
-                   <td className="py-4 px-4 text-slate-500">{(item || {}).description || '-'}</td>
-                   <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-slate-50 rounded">{(item || {}).meters ? `${item.meters}m` : 'Swatch'}</td>
-                   <td className="py-4 px-4 text-right font-mono font-bold text-purple-700">{(item || {}).price ? `€${item.price}` : '-'}</td>
-                 </tr>
+                  <tr key={idx}>
+                    <td className="py-4 px-4 font-bold text-slate-700">{(item || {}).fabricCode || '-'}</td>
+                    <td className="py-4 px-4 text-slate-500">{(item || {}).description || '-'}</td>
+                    <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-slate-50 rounded">{(item || {}).meters ? `${item.meters}m` : 'Swatch'}</td>
+                    <td className="py-4 px-4 text-right font-mono font-bold text-purple-700">{(item || {}).price ? `€${item.price}` : '-'}</td>
+                  </tr>
               ))}
-           </tbody>
+            </tbody>
         </table>
         <div className="mt-12 text-center text-xs text-slate-400 border-t pt-4">
-           Sample Shipment Document
+            Sample Shipment Document
         </div>
       </div>
     </div>
   );
 };
 
-// --- DASHBOARD (UPDATED FOR v5.8 EXCEL EXPORT) ---
-const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], suppliers = [], customers = [], samples = [], dateRangeStart, dateRangeEnd, setActiveTab }) => {
-  // SAFE CALCULATIONS: Handle undefined/null gracefully
-  const totalFabrics = fabrics?.length || 0;
-  const totalMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((rSum, r) => rSum + parseFloat(r.meters || 0), 0) || 0, 0);
-  const totalStockValue = calculateTotalWarehouseValue(fabrics, purchases);
-  const pendingOrders = (orders || []).filter(o => o.status === 'Pending').length;
-
+// --- DASHBOARD (v5.13: With Fixed Excel Export & Split Columns) ---
+const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
+  
+  // --- 1. SAFE METRIC CALCULATIONS ---
   const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
   const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
   const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
-  const netPurchasesFromFabrics = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
-  const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.netPrice) || 0), 0);
-  const totalNetPurchases = netPurchasesFromFabrics + netExpenses; 
+  // Calculate Totals
+  const totalStockMeters = fabrics.reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
   
-  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
-  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice) || 0), 0);
-  
-  const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
-  const totalGrossProfit = totalRevenue - totalNetPurchases;
+  // Calculate Stock Value (Weighted Average Logic)
+  const totalStockValue = fabrics.reduce((total, f) => {
+      let totalVal = 0, totalMet = 0;
+      purchases.forEach(p => (p.items||[]).forEach(i => {
+          if(i.fabricCode === f.mainCode) {
+              totalVal += (parseFloat(i.meters)||0) * (parseFloat(i.pricePerMeter)||0);
+              totalMet += (parseFloat(i.meters)||0);
+          }
+      }));
+      (f.rolls||[]).forEach(r => {
+           if(parseFloat(r.price) > 0) {
+               totalVal += (parseFloat(r.meters)||0) * (parseFloat(r.price)||0);
+               totalMet += (parseFloat(r.meters)||0);
+           }
+      });
+      const avgCost = totalMet > 0 ? totalVal / totalMet : 0;
+      const fabricValue = (f.rolls || []).reduce((sum, r) => {
+          const price = parseFloat(r.price) > 0 ? parseFloat(r.price) : avgCost;
+          return sum + ((parseFloat(r.meters) || 0) * price);
+      }, 0);
+      return total + fabricValue;
+  }, 0);
 
-  // --- UPDATED EXPORT FUNCTION ---
-  const exportAllData = () => {
+  const totalRevenue = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.finalPrice) || 0), 0);
+  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0) + filteredPurchases.reduce((sum, p) => sum + (parseFloat(p.finalPrice) || 0), 0);
+  const netProfit = totalRevenue - totalExpenses;
+  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+
+  // --- 2. UPDATED EXCEL EXPORT (SPLIT COLUMNS) ---
+  const handleExport = () => {
     try {
+      // INVENTORY SHEET
+      const inventoryData = fabrics.flatMap(f => (f.rolls || []).map(r => ({
+        "Fabric Code": f.mainCode,
+        "Roll Code": r.subCode || r.rollCode || '-', // Split Column
+        "Color": r.rollColor || f.color,
+        "Description": r.description || '',
+        "Meters": parseFloat(r.meters || 0),
+        "Price": parseFloat(r.price || 0),
+        "Total Value": (parseFloat(r.meters || 0) * parseFloat(r.price || 0)).toFixed(2),
+        "Location": r.location || 'Warehouse'
+      })));
+
+      // PURCHASES SHEET (Split Columns)
+      const purchasesData = purchases.flatMap(p => (p.items || []).map(i => ({
+        "Date": p.date,
+        "Supplier": p.supplier,
+        "Invoice No": p.invoiceNo,
+        "Fabric Code": i.fabricCode,          // <--- Separate Column
+        "Roll Code": i.subCode || i.rollCode, // <--- Separate Column
+        "Description": i.description,
+        "Meters": parseFloat(i.meters || 0),
+        "Price": parseFloat(i.pricePerMeter || 0),
+        "Total": parseFloat(i.totalPrice || 0)
+      })));
+
+      // SALES SHEET (Split Columns)
+      const salesData = orders.flatMap(o => (o.items || []).map(i => ({
+        "Date": o.date,
+        "Customer": o.customer,
+        "Invoice No": o.invoiceNo,
+        "Fabric Code": i.fabricCode,          // <--- Separate Column
+        "Roll Code": i.subCode || i.rollCode, // <--- Separate Column
+        "Meters": parseFloat(i.meters || 0),
+        "Price": parseFloat(i.pricePerMeter || 0),
+        "Total": parseFloat(i.totalPrice || 0),
+        "Status": o.status
+      })));
+
+      // Create Workbook
       const wb = XLSX.utils.book_new();
-      
-      // 1. INVENTORY SHEET (Added New Fields)
-      const inventoryData = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
-          Supplier: f.supplier || '', 
-          MainCode: f.mainCode, 
-          Name: f.name, 
-          SalePrice: f.salePrice || '', 
-          RollCode: r.subCode, // Renamed Header
-          Description: r.description || '', 
-          // NEW FIELDS
-          "Design/Col": r.designCol || '',
-          Color: r.rollColor || '',
-          Quality: r.quality || '',
-          "Qual No": r.qualityNo || '',
-          "Net Kgr": r.netKgr || '',
-          Width: r.width || '',
-          // METRICS
-          Meters: r.meters, 
-          Location: r.location, 
-          Price: r.price, 
-          Image: r.image || '' 
-      })));
-      if(inventoryData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), 'Inventory');
-      
-      // 2. SALES SHEET
-      const salesData = orders.flatMap(o => (o.items || []).map(item => ({ 
-          OrderID: o.orderId || '',
-          Date: o.date, 
-          Invoice: o.invoiceNo, 
-          Customer: o.customer, 
-          RollCode: item.subCode, 
-          Description: item.description || '', 
-          Qty: item.meters, 
-          Net: item.totalPrice, 
-          VAT: item.totalPrice * (o.vatRate/100), 
-          Total: item.totalPrice * (1 + o.vatRate/100), 
-          Status: o.status 
-      })));
-      if(salesData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), 'Sales');
-      
-      // 3. PURCHASES SHEET (Added New Fields)
-      const purchaseData = purchases.flatMap(p => (p.items || []).map(item => ({ 
-          Date: p.date, 
-          Supplier: p.supplier, 
-          RollCode: item.subCode, // Renamed Header
-          Description: item.description || '', 
-          // NEW FIELDS
-          "Design/Col": item.designCol || '',
-          Color: item.rollColor || '',
-          Quality: item.quality || '',
-          "Qual No": item.qualityNo || '',
-          "Net Kgr": item.netKgr || '',
-          Width: item.width || '',
-          // METRICS
-          Qty: item.meters, 
-          Net: item.totalPrice, 
-          VAT: item.totalPrice * (p.vatRate/100), 
-          Total: item.totalPrice * (1 + p.vatRate/100) 
-      })));
-      if(purchaseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchaseData), 'Purchases');
-      
-      const expenseData = expenses.flatMap(e => (e.items || []).map(item => ({ Invoice: e.invoiceNo, Company: e.company, Date: e.date, Description: item.description, Net: item.netPrice, VAT: item.totalPrice - item.netPrice, Total: item.totalPrice })));
-      if(expenseData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseData), 'Expenses');
-      
-      const sampleData = samples.flatMap(s => (s.items || []).map(item => ({ Date: s.date, Customer: s.customer, Notes: s.notes, Fabric: item.fabricCode, Description: item.description, Length: item.meters, Price: item.price || '' })));
-      if(sampleData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sampleData), 'Samples');
+      if(inventoryData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inventoryData), "Inventory");
+      if(purchasesData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(purchasesData), "Purchases");
+      if(salesData.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(salesData), "Sales");
 
-      const supplierData = suppliers.map(s => ({ Company: s.name, Contact: s.contact, VAT: s.vatNumber, Phone: s.phone, Email: s.email, Address: s.address, IBAN: s.iban }));
-      if(supplierData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(supplierData), 'Suppliers');
-      
-      const customerData = customers.map(c => ({ Company: c.name, Contact: c.contact, VAT: c.vatNumber, Phone: c.phone, Email: c.email, Address: c.address, IBAN: c.iban }));
-      if(customerData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customerData), 'Customers');
-
-      XLSX.writeFile(wb, `Elgrecotex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (error) {
-      alert("Error exporting data: " + error.message);
-      console.error(error);
+      XLSX.writeFile(wb, `ElGrecoTex_Export_v5.13_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) {
+      console.error("Export Error:", e);
+      alert("Error exporting data. Please check console.");
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-         <div>
-            <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-            <p className="text-slate-500 text-sm">Financial Overview & Actions</p>
-         </div>
-         <button onClick={exportAllData} className="bg-emerald-600 text-white px-5 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
-            <Download size={18}/> Export All Data
-         </button>
+    <div className="space-y-6 animate-in fade-in">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+          <p className="text-slate-500">Real-time business overview</p>
+        </div>
+        <button onClick={handleExport} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center gap-2">
+           <FileSpreadsheet size={20}/> Export All Data
+        </button>
       </div>
 
+      {/* METRIC CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <DashboardCard title="Total Fabrics" value={totalFabrics} subValue={`${Math.round(totalMeters)} meters`} icon={Package} color="blue" onClick={() => setActiveTab('inventory')} />
-        <DashboardCard title="Stock Value" value={`€${totalStockValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Warehouse Assets" icon={DollarSign} color="emerald" onClick={() => setActiveTab('inventory')} />
-        <DashboardCard title="Pending Orders" value={pendingOrders} subValue="Action Required" icon={FileText} color="amber" onClick={() => setActiveTab('salesinvoices')} />
-        <DashboardCard title="Gross Profit" value={`€${totalGrossProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} subValue="Selected Period" icon={BarChart3} color={totalGrossProfit >= 0 ? "purple" : "red"} />
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Package size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Total Stock</h3></div>
+          <p className="text-3xl font-bold text-slate-800">{totalStockMeters.toFixed(1)}m</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Euro size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Stock Value</h3></div>
+          <p className="text-3xl font-bold text-slate-800">€{totalStockValue.toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => onNavigate('salesinvoices')}>
+          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><FileText size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Pending Orders</h3></div>
+          <p className="text-3xl font-bold text-slate-800">{pendingOrders}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 mb-2"><div className="p-3 bg-purple-50 text-purple-600 rounded-xl"><Wallet size={24}/></div><h3 className="text-slate-500 font-bold text-sm uppercase">Net Profit</h3></div>
+          <p className={`text-3xl font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>€{netProfit.toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-         <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Quick Actions</h3>
-         <div className="flex gap-4 overflow-x-auto pb-2">
-            <button onClick={() => setActiveTab('salesinvoices')} className="flex items-center gap-3 px-5 py-3 bg-blue-50 text-blue-700 rounded-xl font-bold hover:bg-blue-100 transition-colors border border-blue-100"><Plus size={18}/> New Sale Invoice</button>
-            <button onClick={() => setActiveTab('purchases')} className="flex items-center gap-3 px-5 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold hover:bg-emerald-100 transition-colors border border-emerald-100"><Plus size={18}/> New Purchase</button>
-            <button onClick={() => setActiveTab('samples')} className="flex items-center gap-3 px-5 py-3 bg-purple-50 text-purple-700 rounded-xl font-bold hover:bg-purple-100 transition-colors border border-purple-100"><Tag size={18}/> Log Sample</button>
-            <button onClick={() => setActiveTab('inventory')} className="flex items-center gap-3 px-5 py-3 bg-slate-50 text-slate-700 rounded-xl font-bold hover:bg-slate-100 transition-colors border border-slate-200"><Search size={18}/> Search Stock</button>
+      {/* QUICK ACTIONS */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+         <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <button onClick={() => onNavigate('sales')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Create invoice</div></button>
+            <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add stock</div></button>
+            <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Check Stock</div><div className="text-xs text-slate-400">View fabrics</div></button>
+            <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Send Samples</div><div className="text-xs text-slate-400">Log shipment</div></button>
          </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><BarChart3 size={100} /></div>
-           <h3 className="font-bold text-slate-500 uppercase tracking-wider mb-6">Money Out</h3>
-           <div className="space-y-6 relative z-10">
-              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
-                 <span className="text-slate-600 font-medium">Fabric Purchases</span>
-                 <span className="text-xl font-bold text-slate-800">€{netPurchasesFromFabrics.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
-                 <span className="text-slate-600 font-medium">Other Expenses</span>
-                 <span className="text-xl font-bold text-slate-800">€{netExpenses.toFixed(2)}</span>
-              </div>
-              <div className="pt-2">
-                 <span className="block text-xs font-bold text-red-400 uppercase">Total Net Purchases</span>
-                 <span className="text-3xl font-extrabold text-slate-900">€{totalNetPurchases.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-              </div>
-              <div className="bg-red-50 p-4 rounded-xl flex justify-between items-center mt-2">
-                 <span className="text-red-800 font-bold">Total Cash Out (Inc. VAT):</span>
-                 <span className="text-2xl font-bold text-red-900">€{totalCashOut.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-              </div>
-           </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity"><DollarSign size={100} /></div>
-           <h3 className="font-bold text-slate-500 uppercase tracking-wider mb-6">Money In</h3>
-           <div className="space-y-6 relative z-10">
-              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
-                 <span className="text-slate-600 font-medium">Sales Revenue</span>
-                 <span className="text-xl font-bold text-emerald-600">€{totalRevenue.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-end border-b border-slate-50 pb-2">
-                 <span className="text-slate-600 font-medium">VAT Collected</span>
-                 <span className="text-xl font-bold text-slate-400">€{filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0).toFixed(2)}</span>
-              </div>
-              <div className="pt-4">
-                 <span className="block text-xs font-bold text-emerald-500 uppercase">Total Revenue (Excl. VAT)</span>
-                 <span className="text-4xl font-extrabold text-emerald-900">€{totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
-              </div>
-           </div>
-        </div>
       </div>
     </div>
   );
@@ -1427,8 +1416,7 @@ const FabricERP = () => {
   const [customers, setCustomers] = useState([]);
   const [samples, setSamples] = useState([]);
 
-  // --- INSIDE THE MAIN COMPONENT (FabricERP) ---
-useEffect(() => {
+  useEffect(() => {
     // Dynamically Load PDF Script
     const script = document.createElement('script');
     script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
@@ -1436,54 +1424,14 @@ useEffect(() => {
     document.body.appendChild(script);
 
     if (!isAuthenticated) return;
-
-    // --- 1. LOAD FABRICS ---
-    const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setFabrics(data);
-    });
-
-    // --- 2. LOAD ORDERS ---
-    const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setOrders(data);
-    });
-
-    // --- 3. LOAD PURCHASES ---
-    const unsubPur = onSnapshot(query(collection(db, 'purchases'), orderBy('date', 'desc')), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setPurchases(data);
-    });
-
-    // --- 4. LOAD EXPENSES ---
-    const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setExpenses(data);
-    });
-    
-    // --- 5. LOAD SUPPLIERS ---
-    const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setSuppliers(data);
-    });
-    
-    // --- 6. LOAD CUSTOMERS ---
-    const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setCustomers(data);
-    });
-    
-    // --- 7. LOAD SAMPLES ---
-    const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => {
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setSamples(data);
-    });
-
-    // Clean up when leaving
-    return () => { 
-        unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); 
-        if(document.body.contains(script)) document.body.removeChild(script); 
-    };
+    const unsubFab = onSnapshot(collection(db, 'fabrics'), (snap) => setFabrics(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubOrd = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snap) => setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubPur = onSnapshot(query(collection(db, 'purchases'), orderBy('date', 'desc')), (snap) => setPurchases(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubExp = onSnapshot(query(collection(db, 'expenses'), orderBy('date', 'desc')), (snap) => setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); document.body.removeChild(script); };
   }, [isAuthenticated]);
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
