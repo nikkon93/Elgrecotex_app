@@ -499,7 +499,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     </div>
   );
 };
-// --- 5. CRASH-PROOF INVENTORY (v5.22: All Fields + Safety Shields) ---
+// --- 5. FULL INVENTORY (v5.23: Auto-ID, Roll Delete, & Safety) ---
 
 const HighlightText = ({ text, highlight }) => {
   if (!highlight || !highlight.trim()) return <span>{text || ''}</span>;
@@ -533,6 +533,9 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     location: '', price: '', image: '' 
   });
 
+  // --- UNIQUE ID GENERATOR ---
+  const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
+
   const handleUpdateFabric = async () => {
     try {
       if (editingFabric?.id) {
@@ -544,25 +547,38 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   };
 
   const handleSaveRoll = async (fabricId) => {
-    if(currentRoll.subCode && currentRoll.meters) {
-      const fabric = fabrics.find(f => f.id === fabricId);
-      let updatedRolls = Array.isArray(fabric?.rolls) ? [...fabric.rolls] : [];
-      
-      if(editRollMode) {
-        updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r);
-      } else {
-        updatedRolls.push({ 
-          ...currentRoll, 
-          rollId: `R-${Date.now()}`,
-          dateAdded: new Date().toISOString().split('T')[0]
-        });
+    try {
+      if(currentRoll.subCode && currentRoll.meters) {
+        const fabric = fabrics.find(f => f.id === fabricId);
+        let updatedRolls = Array.isArray(fabric?.rolls) ? [...fabric.rolls] : [];
+        
+        if(editRollMode) {
+          updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r);
+        } else {
+          // AUTO-ID ASSIGNMENT
+          const newRoll = { 
+            ...currentRoll, 
+            rollId: currentRoll.rollId || generateRollId(),
+            dateAdded: new Date().toISOString().split('T')[0]
+          };
+          updatedRolls.push(newRoll);
+        }
+        
+        await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
+        setAddRollOpen(null);
+        setEditRollMode(false);
+        setCurrentRoll({ rollId: '', subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '', image: '' });
       }
-      
-      await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
-      setAddRollOpen(null);
-      setEditRollMode(false);
-      setCurrentRoll({ rollId: '', subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '', image: '' });
-    }
+    } catch (e) { alert("Error saving: " + e.message); }
+  };
+
+  const handleDeleteRoll = async (fabricId, rollId) => { 
+    if(!window.confirm("Delete this roll permanently?")) return;
+    try {
+      const fabric = fabrics.find(f => f.id === fabricId);
+      const updatedRolls = (fabric.rolls || []).filter(r => r.rollId !== rollId); 
+      await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls }); 
+    } catch (e) { alert("Delete failed: " + e.message); }
   };
 
   const filtered = (fabrics || []).filter(f => {
@@ -571,7 +587,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     const mainMatch = f?.mainCode?.toLowerCase().includes(s) || f?.name?.toLowerCase().includes(s);
     const rollMatch = (f?.rolls || []).some(r => 
       r?.subCode?.toLowerCase().includes(s) || 
-      r?.description?.toLowerCase().includes(s) ||
+      r?.rollId?.toLowerCase().includes(s) ||
       r?.location?.toLowerCase().includes(s)
     );
     return mainMatch || rollMatch;
@@ -579,19 +595,20 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 
   return (
     <div className="space-y-6">
+      {/* HEADER & SEARCH */}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-4 w-full">
             <Search className="text-slate-400" size={20}/>
-            <input className="w-full bg-transparent outline-none font-medium" placeholder="Search by Code, Name, Roll or Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input className="w-full bg-transparent outline-none font-medium" placeholder="Search by Code, Name, Roll ID or Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
-          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
+          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold">New Fabric</button>
       </div>
 
       {/* FABRIC EDIT MODAL */}
       {editingFabric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full animate-in zoom-in duration-200">
-            <h3 className="text-xl font-black text-slate-800 mb-6">Edit Fabric Details</h3>
+          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full">
+            <h3 className="text-xl font-black text-slate-800 mb-6">Edit Fabric</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <input className="border-2 p-3 rounded-xl font-bold" value={editingFabric.mainCode || ''} onChange={e => setEditingFabric({...editingFabric, mainCode: e.target.value})} placeholder="Main Code" />
@@ -607,13 +624,14 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
               </div>
             </div>
             <div className="flex gap-3 mt-8">
-              <button onClick={handleUpdateFabric} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg">SAVE</button>
-              <button onClick={() => setEditingFabric(null)} className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-xl font-black">CANCEL</button>
+              <button onClick={handleUpdateFabric} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black">SAVE</button>
+              <button onClick={() => setEditingFabric(null)} className="flex-1 bg-slate-100 py-4 rounded-xl font-black">CANCEL</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* FABRICS LIST */}
       <div className="space-y-4">
         {filtered.map(fabric => {
           const rolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
@@ -623,40 +641,30 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
             <div key={fabric?.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
               <div className="p-5 bg-slate-50 flex justify-between items-center border-b">
                 <div>
-                  <h3 className="font-bold text-lg text-slate-800">
-                    <HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - <HighlightText text={fabric?.name} highlight={searchTerm}/>
-                  </h3>
-                  <p className="text-sm text-slate-500">{fabric?.color || 'No Color'} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span></p>
+                  <h3 className="font-bold text-lg text-slate-800"><HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - <HighlightText text={fabric?.name} highlight={searchTerm}/></h3>
+                  <p className="text-sm text-slate-500">{fabric?.color} • {totalMeters.toFixed(2)}m Total</p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-400 hover:text-blue-500"><Pencil size={20}/></button>
-                  <button onClick={() => {setAddRollOpen(fabric.id); setEditRollMode(false);}} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm"><Plus size={16}/> Roll</button>
+                  <button onClick={() => {setAddRollOpen(fabric.id); setEditRollMode(false);}} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm">+ Roll</button>
                 </div>
               </div>
 
-              {/* ADD/EDIT ROLL PANEL */}
+              {/* ROLL ENTRY PANEL */}
               {addRollOpen === fabric.id && (
-                <div className="p-6 bg-amber-50 border-b animate-in slide-in-from-top duration-200">
+                <div className="p-6 bg-amber-50 border-b animate-in slide-in-from-top">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div><label className="text-[10px] font-bold text-slate-400">ROLL CODE</label>
                     <input className="w-full p-3 border-2 rounded-xl bg-white font-bold" value={currentRoll.subCode || ''} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} /></div>
                     <div><label className="text-[10px] font-bold text-slate-400">METERS</label>
                     <input type="number" className="w-full p-3 border-2 rounded-xl bg-white font-bold" value={currentRoll.meters || ''} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-slate-400">WIDTH (cm)</label>
+                    <div><label className="text-[10px] font-bold text-slate-400">WIDTH</label>
                     <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.width || ''} onChange={e => setCurrentRoll({...currentRoll, width: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-slate-400">LOC (STORE)</label>
+                    <div><label className="text-[10px] font-bold text-slate-400">LOC</label>
                     <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.location || ''} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} /></div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                    <div><label className="text-[10px] font-bold text-slate-400">QUALITY</label>
-                    <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.quality || ''} onChange={e => setCurrentRoll({...currentRoll, quality: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-slate-400">DESIGN / COL</label>
-                    <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.designCol || ''} onChange={e => setCurrentRoll({...currentRoll, designCol: e.target.value})} /></div>
-                    <div><label className="text-[10px] font-bold text-slate-400">PHOTO URL</label>
-                    <input className="w-full p-3 border-2 rounded-xl bg-white text-xs" value={currentRoll.image || ''} onChange={e => setCurrentRoll({...currentRoll, image: e.target.value})} placeholder="https://..." /></div>
-                  </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg">Save Roll</button>
+                    <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold">Save Roll</button>
                     <button onClick={() => setAddRollOpen(null)} className="bg-white border-2 px-8 py-3 rounded-xl font-bold text-slate-400">Cancel</button>
                   </div>
                 </div>
@@ -666,22 +674,23 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
                     <tr>
-                      <th className="p-3 pl-6 text-left">Code</th>
+                      <th className="p-3 pl-6 text-left">Auto ID</th>
+                      <th className="p-3 text-left">Code</th>
                       <th className="p-3 text-left">Loc</th>
-                      <th className="p-3 text-left">Width</th>
                       <th className="p-3 text-left">Meters</th>
                       <th className="p-3 text-right pr-6">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {rolls.map((roll, idx) => (
-                      <tr key={roll?.rollId || idx} className="hover:bg-slate-50">
-                        <td className="p-3 pl-6 font-bold text-blue-600"><HighlightText text={roll?.subCode} highlight={searchTerm}/></td>
+                      <tr key={roll?.rollId || idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 pl-6 font-mono text-[10px] text-slate-400">{roll?.rollId || 'NO ID'}</td>
+                        <td className="p-3 font-bold text-blue-600"><HighlightText text={roll?.subCode} highlight={searchTerm}/></td>
                         <td className="p-3 text-slate-500">{roll?.location || '-'}</td>
-                        <td className="p-3 text-slate-500">{roll?.width ? `${roll.width}cm` : '-'}</td>
                         <td className="p-3 font-bold text-slate-800">{(parseFloat(roll?.meters) || 0).toFixed(2)}m</td>
-                        <td className="p-3 text-right pr-6 space-x-3">
+                        <td className="p-3 text-right pr-6 flex justify-end gap-3">
                           <button onClick={() => {setCurrentRoll(roll); setAddRollOpen(fabric.id); setEditRollMode(true);}} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
+                          <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-600"><Trash2 size={16}/></button>
                         </td>
                       </tr>
                     ))}
