@@ -10,24 +10,7 @@ import {
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 
-const HighlightText = ({ text, highlight }) => {
-  if (!highlight || !highlight.trim()) return <span>{text}</span>;
-  const regex = new RegExp(`(${highlight})`, "gi");
-  const parts = String(text || '').split(regex);
-  return (
-    <span>
-      {parts.map((part, i) => 
-        regex.test(part) ? (
-          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">
-            {part}
-          </mark>
-        ) : (
-          part
-        )
-      )}
-    </span>
-  );
-};
+
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
@@ -505,22 +488,52 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     </div>
   );
 };
-// --- 5. DEEP SEARCH & HIGHLIGHT INVENTORY (v5.17) ---
+// --- 5. DEEP SEARCH & HIGHLIGHT INVENTORY (v5.18: Search + WORKING EDIT) ---
 
+const HighlightText = ({ text, highlight }) => {
+  if (!highlight || !highlight.trim()) return <span>{text || ''}</span>;
+  const regex = new RegExp(`(${highlight})`, "gi");
+  const parts = String(text || '').split(regex);
+  return (
+    <span>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  );
+};
 
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
+  const [editingFabric, setEditingFabric] = useState(null); // State to hold fabric being edited
   const [addRollOpen, setAddRollOpen] = useState(null);
   const [editRollMode, setEditRollMode] = useState(false);
+  
   const [newFabricData, setNewFabricData] = useState({ 
     mainCode: '', name: '', color: '', supplier: '', salePrice: '' 
   });
+  
   const [currentRoll, setCurrentRoll] = useState({ 
     rollId: '', subCode: '', description: '', designCol: '', rollColor: '', 
     quality: '', qualityNo: '', netKgr: '', width: '', meters: '', 
     location: '', price: ''
   });
+
+  // SAVE UPDATED FABRIC TO FIREBASE
+  const handleUpdateFabric = async () => {
+    if (editingFabric && editingFabric.mainCode) {
+      const { id, ...data } = editingFabric;
+      await updateDoc(doc(db, "fabrics", id), data);
+      setEditingFabric(null);
+    }
+  };
 
   const filtered = (fabrics || []).filter(f => {
     const search = searchTerm.toLowerCase().trim();
@@ -581,6 +594,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 
   return (
     <div className="space-y-6">
+      {/* SEARCH BAR */}
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-4 w-full">
             <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
@@ -594,6 +608,38 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
           <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 shadow-md flex gap-2"><Plus size={20}/> New Fabric</button>
       </div>
 
+      {/* EDIT FABRIC MODAL WINDOW */}
+      {editingFabric && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-lg w-full animate-in zoom-in duration-200">
+            <h3 className="text-xl font-black text-slate-800 mb-6">Edit Fabric Details</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-[10px] font-black text-slate-400 uppercase">Main Code</label>
+                <input className="w-full border-2 p-3 rounded-xl mt-1 font-bold" value={editingFabric.mainCode} onChange={e => setEditingFabric({...editingFabric, mainCode: e.target.value})} /></div>
+                <div><label className="text-[10px] font-black text-slate-400 uppercase">Supplier</label>
+                <select className="w-full border-2 p-3 rounded-xl mt-1 bg-slate-50" value={editingFabric.supplier} onChange={e => setEditingFabric({...editingFabric, supplier: e.target.value})}>
+                  {(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select></div>
+              </div>
+              <div><label className="text-[10px] font-black text-slate-400 uppercase">Fabric Name</label>
+              <input className="w-full border-2 p-3 rounded-xl mt-1" value={editingFabric.name} onChange={e => setEditingFabric({...editingFabric, name: e.target.value})} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-[10px] font-black text-slate-400 uppercase">Color</label>
+                <input className="w-full border-2 p-3 rounded-xl mt-1" value={editingFabric.color} onChange={e => setEditingFabric({...editingFabric, color: e.target.value})} /></div>
+                <div><label className="text-[10px] font-black text-slate-400 uppercase">Sale Price (€)</label>
+                <input className="w-full border-2 p-3 rounded-xl mt-1 font-mono font-bold" type="number" value={editingFabric.salePrice} onChange={e => setEditingFabric({...editingFabric, salePrice: e.target.value})} /></div>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button onClick={handleUpdateFabric} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-blue-700 transition-all">SAVE CHANGES</button>
+              <button onClick={() => setEditingFabric(null)} className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-xl font-black hover:bg-slate-200">CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FABRICS LIST */}
       <div className="grid grid-cols-1 gap-4">
         {filtered.map(fabric => {
           const rolls = Array.isArray(fabric.rolls) ? fabric.rolls : [];
@@ -607,10 +653,12 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                        <HighlightText text={fabric.mainCode} highlight={searchTerm} /> - <HighlightText text={fabric.name} highlight={searchTerm} />
                     </h3>
                     <p className="text-slate-500 text-sm">
+                       {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
                        {fabric.color} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span>
                     </p>
                   </div>
                   <div className="flex gap-2">
+                      <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-300 hover:text-blue-600 transition-colors"><Pencil size={20}/></button>
                       <button onClick={() => openAddRoll(fabric.id)} className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-lg font-bold border border-emerald-100 flex items-center gap-2"><Plus size={16}/> Roll</button>
                       <button onClick={() => handleDeleteFabric(fabric.id)} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={20}/></button>
                   </div>
@@ -656,7 +704,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
       </div>
     </div>
   );
-}; // This is the final bracket that should land on Line 728
+};
 // --- UPDATED SALES INVOICES (v5.10: Fixed Stock Deduction) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
