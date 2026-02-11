@@ -10,6 +10,24 @@ import {
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 
+const HighlightText = ({ text, highlight }) => {
+  if (!highlight || !highlight.trim()) return <span>{text}</span>;
+  const regex = new RegExp(`(${highlight})`, "gi");
+  const parts = String(text || '').split(regex);
+  return (
+    <span>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">
+            {part}
+          </mark>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  );
+};
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
@@ -65,20 +83,7 @@ const downloadPDF = (elementId, filename) => {
   window.html2pdf().set(opt).from(element).save();
 };
 
-// --- COMPONENT: HIGHLIGHTER ---
-const HighlightText = ({ text, highlight }) => {
-  if (!highlight || !text) return <span>{text}</span>;
-  const textStr = String(text); 
-  const parts = textStr.split(new RegExp(`(${highlight})`, 'gi'));
-  return (
-    <span>
-      {parts.map((part, i) => 
-        part.toLowerCase() === highlight.toLowerCase() ? 
-          <span key={i} className="bg-yellow-300 text-black font-bold px-0.5 rounded-sm shadow-sm">{part}</span> : part
-      )}
-    </span>
-  );
-};
+
 
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
@@ -500,36 +505,39 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     </div>
   );
 };
-// --- CRASH-PROOF INVENTORY TAB (v5.14) ---
-const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], fabricsData = [], onBack }) => {
+// --- 5. DEEP SEARCH & HIGHLIGHT INVENTORY (v5.17) ---
+
+
+const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
-  const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' });
-  const [addRollOpen, setAddRollOpen] = useState(null); 
+  const [addRollOpen, setAddRollOpen] = useState(null);
   const [editRollMode, setEditRollMode] = useState(false);
-  
+  const [newFabricData, setNewFabricData] = useState({ 
+    mainCode: '', name: '', color: '', supplier: '', salePrice: '' 
+  });
   const [currentRoll, setCurrentRoll] = useState({ 
     rollId: '', subCode: '', description: '', designCol: '', rollColor: '', 
     quality: '', qualityNo: '', netKgr: '', width: '', meters: '', 
-    location: '', price: '', image: '' 
+    location: '', price: ''
   });
 
-  // SAFE FILTERING: Added optional chaining (?.) and empty array defaults
   const filtered = (fabrics || []).filter(f => {
-    const search = searchTerm.toLowerCase();
-    const mainCodeMatch = f.mainCode?.toLowerCase().includes(search);
-    const nameMatch = f.name?.toLowerCase().includes(search);
+    const search = searchTerm.toLowerCase().trim();
+    if (!search) return true;
+    const mainMatch = f.mainCode?.toLowerCase().includes(search) || f.name?.toLowerCase().includes(search);
     const rollMatch = (f.rolls || []).some(r => 
-      r?.subCode?.toLowerCase().includes(search) || 
-      r?.description?.toLowerCase().includes(search)
+      r.subCode?.toLowerCase().includes(search) || 
+      r.description?.toLowerCase().includes(search) ||
+      r.rollCode?.toLowerCase().includes(search)
     );
-    return mainCodeMatch || nameMatch || rollMatch;
+    return mainMatch || rollMatch;
   });
 
   const handleAddFabric = async () => { 
     if(newFabricData.mainCode) { 
       await addDoc(collection(db, "fabrics"), { ...newFabricData, rolls: [] }); 
-      setNewFabricData({ mainCode: '', name: '', color: '', image: '', supplier: '', salePrice: '' }); 
+      setNewFabricData({ mainCode: '', name: '', color: '', supplier: '', salePrice: '' }); 
       setShowAddFabric(false); 
     }
   };
@@ -541,7 +549,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], fabricsDat
   const openAddRoll = (fabricId) => { 
       setAddRollOpen(fabricId); 
       setEditRollMode(false); 
-      setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '', image: '' }); 
+      setCurrentRoll({ rollId: Date.now(), subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '' }); 
   }
   
   const openEditRoll = (fabricId, roll) => { 
@@ -554,13 +562,11 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], fabricsDat
     if(currentRoll.subCode && currentRoll.meters) {
       const fabric = fabrics.find(f => f.id === fabricId);
       let updatedRolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
-      
       if(editRollMode) { 
         updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r); 
       } else { 
         updatedRolls = [...updatedRolls, { ...currentRoll, rollId: Date.now(), dateAdded: new Date().toISOString().split('T')[0] }]; 
       }
-      
       await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
       setAddRollOpen(null);
     }
@@ -580,56 +586,29 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], fabricsDat
             <div className="bg-slate-100 p-2 rounded-lg"><Search className="text-slate-400" size={20}/></div>
             <input 
               className="w-full bg-transparent outline-none font-medium text-slate-700" 
-              placeholder="Search fabrics..." 
+              placeholder="Search (e.g. V-05)..." 
               value={searchTerm} 
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
-          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 transition-colors shadow-md whitespace-nowrap flex gap-2"><Plus size={20}/> New Fabric</button>
+          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-amber-600 shadow-md flex gap-2"><Plus size={20}/> New Fabric</button>
       </div>
-      
-      {/* ADD FABRIC FORM */}
-      {showAddFabric && (
-        <div className="bg-white p-6 rounded-xl shadow-lg border border-amber-200 animate-in fade-in">
-           <h3 className="font-bold mb-4 text-lg text-slate-800">Add New Fabric</h3>
-           <div className="grid grid-cols-5 gap-4 mb-4">
-              <select className="border p-3 rounded-lg w-full bg-slate-50" value={newFabricData.supplier} onChange={e => setNewFabricData({...newFabricData, supplier: e.target.value})}>
-                 <option value="">-- Supplier --</option>
-                 {(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-              </select>
-              <input placeholder="Code" className="border p-3 rounded-lg" value={newFabricData.mainCode} onChange={e => setNewFabricData({...newFabricData, mainCode: e.target.value})} />
-              <input placeholder="Name" className="border p-3 rounded-lg" value={newFabricData.name} onChange={e => setNewFabricData({...newFabricData, name: e.target.value})} />
-              <input placeholder="Color" className="border p-3 rounded-lg" value={newFabricData.color} onChange={e => setNewFabricData({...newFabricData, color: e.target.value})} />
-              <input placeholder="Price" type="number" className="border p-3 rounded-lg" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
-           </div>
-           <div className="flex gap-2"><button onClick={handleAddFabric} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">Save</button><button onClick={() => setShowAddFabric(false)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-slate-600">Cancel</button></div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4">
         {filtered.map(fabric => {
           const rolls = Array.isArray(fabric.rolls) ? fabric.rolls : [];
-          // CRASH PROTECTION: Use parseFloat and default to 0
           const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
-          
-          // CRASH PROTECTION: Wrap this in a try/catch if getSubcodeSummary is unstable
-          let summary = [];
-          try {
-             summary = typeof getSubcodeSummary === 'function' ? getSubcodeSummary(rolls, fabric.mainCode, purchases, fabrics) : [];
-          } catch(e) { summary = []; }
 
           return (
             <div key={fabric.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                <div className="p-5 flex justify-between items-center bg-slate-50/50 border-b">
-                  <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center font-bold text-xl">{fabric.mainCode?.substring(0,2) || '??'}</div>
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-800">{fabric.mainCode} - {fabric.name}</h3>
-                        <p className="text-slate-500 text-sm">
-                           {fabric.supplier && <span className="font-bold text-slate-700 mr-2">[{fabric.supplier}]</span>}
-                           {fabric.color} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span>
-                        </p>
-                      </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800">
+                       <HighlightText text={fabric.mainCode} highlight={searchTerm} /> - <HighlightText text={fabric.name} highlight={searchTerm} />
+                    </h3>
+                    <p className="text-slate-500 text-sm">
+                       {fabric.color} • {rolls.length} rolls • <span className="text-blue-600 font-bold">{totalMeters.toFixed(2)}m Total</span>
+                    </p>
                   </div>
                   <div className="flex gap-2">
                       <button onClick={() => openAddRoll(fabric.id)} className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-lg font-bold border border-emerald-100 flex items-center gap-2"><Plus size={16}/> Roll</button>
@@ -637,59 +616,47 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], fabricsDat
                   </div>
                </div>
                
-               {/* ROLLS TABLE */}
                <div className="overflow-x-auto">
                  <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
                         <tr>
                             <th className="p-3 pl-6">Roll Code</th>
                             <th className="p-3">Description</th>
-                            <th className="p-3">Design/Col</th>
-                            <th className="p-3">Quality</th>
                             <th className="p-3">Meters</th>
                             <th className="p-3">Price</th>
                             <th className="p-3 text-right pr-6">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {rolls.map((roll, idx) => (
-                          <tr key={roll.rollId || idx} className="hover:bg-slate-50">
-                             <td className="p-3 pl-6 font-bold text-emerald-600">{roll.subCode || '-'}</td>
-                             <td className="p-3 text-slate-500">{roll.description || '-'}</td>
-                             <td className="p-3 text-slate-500">{roll.designCol || '-'}</td>
-                             <td className="p-3 text-slate-500">{roll.quality || '-'}</td>
-                             <td className="p-3 font-bold text-slate-800">{(parseFloat(roll.meters) || 0).toFixed(2)}m</td>
-                             <td className="p-3 text-slate-500">€{(parseFloat(roll.price) || 0).toFixed(2)}</td>
-                             <td className="p-3 text-right pr-6 flex justify-end gap-2">
-                                <button onClick={() => openEditRoll(fabric.id, roll)} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
-                                <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-500"><Trash2 size={16}/></button>
-                             </td>
-                          </tr>
-                      ))}
+                      {rolls.map((roll, idx) => {
+                          const isMatch = searchTerm && roll.subCode?.toLowerCase().includes(searchTerm.toLowerCase());
+                          return (
+                            <tr key={roll.rollId || idx} className={isMatch ? "bg-yellow-50 border-l-4 border-yellow-400" : "hover:bg-slate-50"}>
+                               <td className="p-3 pl-6 font-bold text-emerald-600">
+                                  <HighlightText text={roll.subCode || roll.rollCode} highlight={searchTerm} />
+                                </td>
+                               <td className="p-3 text-slate-500">
+                                  <HighlightText text={roll.description || '-'} highlight={searchTerm} />
+                               </td>
+                               <td className="p-3 font-bold text-slate-800">{(parseFloat(roll.meters) || 0).toFixed(2)}m</td>
+                               <td className="p-3 text-slate-500">€{(parseFloat(roll.price) || 0).toFixed(2)}</td>
+                               <td className="p-3 text-right pr-6 flex justify-end gap-2">
+                                  <button onClick={() => openEditRoll(fabric.id, roll)} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
+                                  <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-500"><Trash2 size={16}/></button>
+                               </td>
+                            </tr>
+                          );
+                      })}
                     </tbody>
                  </table>
                </div>
-
-               {/* ADD/EDIT ROLL PANEL */}
-               {addRollOpen === fabric.id && (
-                 <div className="bg-emerald-50/50 p-4 border-t border-emerald-100">
-                    <div className="grid grid-cols-6 gap-2 mb-2">
-                        <input placeholder="Roll Code" className="border p-2 rounded bg-white" value={currentRoll.subCode} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} />
-                        <input placeholder="Meters" type="number" className="border p-2 rounded bg-white" value={currentRoll.meters} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} />
-                        <input placeholder="Price" type="number" className="border p-2 rounded bg-white" value={currentRoll.price} onChange={e => setCurrentRoll({...currentRoll, price: e.target.value})} />
-                        <input placeholder="Loc" className="border p-2 rounded bg-white" value={currentRoll.location} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} />
-                        <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-600 text-white rounded font-bold">Save</button>
-                        <button onClick={() => setAddRollOpen(null)} className="text-slate-400">Cancel</button>
-                    </div>
-                 </div>
-               )}
             </div>
-          )
+          );
         })}
       </div>
     </div>
   );
-};
+}; // This is the final bracket that should land on Line 728
 // --- UPDATED SALES INVOICES (v5.10: Fixed Stock Deduction) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
