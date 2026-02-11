@@ -502,16 +502,21 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 // --- 5. FINAL INVENTORY (v5.26: All Fields + Auto-ID + Delete + Search) ---
 
 const HighlightText = ({ text, highlight }) => {
-  if (!highlight || !highlight.trim()) return <span>{text || ''}</span>;
-  const regex = new RegExp(`(${highlight})`, "gi");
-  const parts = String(text || '').split(regex);
+  const strText = String(text || '');
+  const strHighlight = String(highlight || '').trim();
+  
+  if (!strHighlight) return <span>{strText}</span>;
+
+  const index = strText.toLowerCase().indexOf(strHighlight.toLowerCase());
+  if (index === -1) return <span>{strText}</span>;
+
   return (
     <span>
-      {parts.map((part, i) => 
-        regex.test(part) ? (
-          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">{part}</mark>
-        ) : (part)
-      )}
+      {strText.substring(0, index)}
+      <mark className="bg-yellow-300 text-black rounded px-0.5 font-bold">
+        {strText.substring(index, index + strHighlight.length)}
+      </mark>
+      {strText.substring(index + strHighlight.length)}
     </span>
   );
 };
@@ -577,13 +582,194 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls }); 
   };
 
-  const filtered = (fabrics || []).filter(f => {
-    const s = searchTerm?.toLowerCase().trim() || '';
-    if (!s) return true;
-    return f?.mainCode?.toLowerCase().includes(s) || f?.name?.toLowerCase().includes(s) ||
-           (f?.rolls || []).some(r => r?.subCode?.toLowerCase().includes(s) || r?.rollId?.toLowerCase().includes(s) || r?.location?.toLowerCase().includes(s));
+  // --- 5. BULLETPROOF INVENTORY (v5.27: Anti-Crash Search + All Fields) ---
+
+const HighlightText = ({ text, highlight }) => {
+  const strText = String(text || '');
+  if (!highlight || !highlight.trim()) return <span>{strText}</span>;
+  
+  // Safe split without using RegExp to avoid "White Screen" crashes
+  const parts = strText.split(new RegExp(`(${highlight.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')})`, 'gi'));
+  
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.toLowerCase() ? (
+          <mark key={i} className="bg-yellow-300 text-black rounded px-0.5 font-bold">{part}</mark>
+        ) : (part)
+      )}
+    </span>
+  );
+};
+
+const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showAddFabric, setShowAddFabric] = useState(false);
+  const [editingFabric, setEditingFabric] = useState(null);
+  const [addRollOpen, setAddRollOpen] = useState(null);
+  const [editRollMode, setEditRollMode] = useState(false);
+  
+  const [currentRoll, setCurrentRoll] = useState({ 
+    rollId: '', subCode: '', description: '', designCol: '', rollColor: '', 
+    quality: '', qualityNo: '', netKgr: '', width: '', meters: '', 
+    location: '', price: '', image: '' 
   });
 
+  const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const handleUpdateFabric = async () => {
+    try {
+      if (editingFabric?.id) {
+        const { id, ...data } = editingFabric;
+        await updateDoc(doc(db, "fabrics", id), data);
+        setEditingFabric(null);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSaveRoll = async (fabricId) => {
+    try {
+      if(currentRoll.subCode && currentRoll.meters) {
+        const fabric = fabrics.find(f => f.id === fabricId);
+        let updatedRolls = Array.isArray(fabric?.rolls) ? [...fabric.rolls] : [];
+        
+        if(editRollMode) {
+          updatedRolls = updatedRolls.map(r => r.rollId === currentRoll.rollId ? currentRoll : r);
+        } else {
+          const newRoll = { 
+            ...currentRoll, 
+            rollId: currentRoll.rollId || generateRollId(),
+            dateAdded: new Date().toISOString().split('T')[0]
+          };
+          updatedRolls.push(newRoll);
+        }
+        
+        await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls });
+        setAddRollOpen(null);
+        setEditRollMode(false);
+        setCurrentRoll({ rollId: '', subCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', location: '', price: '', image: '' });
+      }
+    } catch (e) { alert("Error: " + e.message); }
+  };
+
+  const handleDeleteRoll = async (fabricId, rollId) => { 
+    if(!window.confirm("Delete this roll permanently?")) return;
+    const fabric = fabrics.find(f => f.id === fabricId);
+    const updatedRolls = (fabric.rolls || []).filter(r => r.rollId !== rollId); 
+    await updateDoc(doc(db, "fabrics", fabricId), { rolls: updatedRolls }); 
+  };
+
+  // --- SAFE FILTER LOGIC ---
+  const filtered = (fabrics || []).filter(f => {
+    const s = (searchTerm || '').toLowerCase().trim();
+    if (!s) return true;
+    
+    // Safety check: Ensure fields exist before calling toLowerCase()
+    const mainCode = String(f?.mainCode || '').toLowerCase();
+    const name = String(f?.name || '').toLowerCase();
+    
+    const mainMatch = mainCode.includes(s) || name.includes(s);
+                      
+    const rolls = Array.isArray(f?.rolls) ? f.rolls : [];
+    const rollMatch = rolls.some(r => {
+      const subCode = String(r?.subCode || '').toLowerCase();
+      const rollId = String(r?.rollId || '').toLowerCase();
+      const loc = String(r?.location || '').toLowerCase();
+      return subCode.includes(s) || rollId.includes(s) || loc.includes(s);
+    });
+    
+    return mainMatch || rollMatch;
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4 w-full">
+            <Search className="text-slate-400" size={20}/>
+            <input 
+              className="w-full bg-transparent outline-none font-medium text-slate-700" 
+              placeholder="Search by Code, ID, or Loc..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+            />
+          </div>
+          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
+      </div>
+
+      <div className="space-y-4">
+        {filtered.map(fabric => {
+          const rolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
+          const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
+
+          return (
+            <div key={fabric?.id} className="bg-white border rounded-xl shadow-sm overflow-hidden">
+              <div className="p-5 bg-slate-50 flex justify-between items-center border-b">
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800">
+                    <HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - {fabric?.name}
+                  </h3>
+                  <p className="text-sm text-slate-500">{totalMeters.toFixed(2)}m Total • {rolls.length} rolls</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-400 hover:text-blue-500"><Pencil size={20}/></button>
+                  <button onClick={() => {setAddRollOpen(fabric.id); setEditRollMode(false);}} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm">+ Roll</button>
+                </div>
+              </div>
+
+              {/* ROLL ENTRY PANEL */}
+              {addRollOpen === fabric.id && (
+                <div className="p-6 bg-amber-50 border-b animate-in slide-in-from-top duration-200">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div><label className="text-[10px] font-bold text-slate-400">ROLL CODE</label>
+                    <input className="w-full p-3 border-2 rounded-xl bg-white font-bold" value={currentRoll.subCode || ''} onChange={e => setCurrentRoll({...currentRoll, subCode: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-slate-400">METERS</label>
+                    <input type="number" className="w-full p-3 border-2 rounded-xl bg-white font-bold" value={currentRoll.meters || ''} onChange={e => setCurrentRoll({...currentRoll, meters: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-slate-400">WIDTH</label>
+                    <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.width || ''} onChange={e => setCurrentRoll({...currentRoll, width: e.target.value})} /></div>
+                    <div><label className="text-[10px] font-bold text-slate-400">LOC</label>
+                    <input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.location || ''} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} /></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleSaveRoll(fabric.id)} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold">Save Roll</button>
+                    <button onClick={() => setAddRollOpen(null)} className="bg-white border-2 px-8 py-3 rounded-xl font-bold text-slate-400">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-400 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-3 pl-6 text-left">Auto ID</th>
+                      <th className="p-3 text-left">Code</th>
+                      <th className="p-3 text-left">Loc</th>
+                      <th className="p-3 text-left">Meters</th>
+                      <th className="p-3 text-right pr-6">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {rolls.map((roll, idx) => (
+                      <tr key={roll?.rollId || idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 pl-6 font-mono text-[10px] text-slate-400">{roll?.rollId || 'NO ID'}</td>
+                        <td className="p-3 font-bold text-blue-600"><HighlightText text={roll?.subCode} highlight={searchTerm}/></td>
+                        <td className="p-3 text-slate-500 font-bold"><HighlightText text={roll?.location} highlight={searchTerm}/></td>
+                        <td className="p-3 font-bold text-slate-800">{(parseFloat(roll?.meters) || 0).toFixed(2)}m</td>
+                        <td className="p-3 text-right pr-6 flex justify-end gap-3">
+                          <button onClick={() => {setCurrentRoll(roll); setAddRollOpen(fabric.id); setEditRollMode(true);}} className="text-blue-400 hover:text-blue-600"><Pencil size={16}/></button>
+                          <button onClick={() => handleDeleteRoll(fabric.id, roll.rollId)} className="text-red-200 hover:text-red-600"><Trash2 size={16}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
   return (
     <div className="space-y-6">
       {/* SEARCH BAR */}
