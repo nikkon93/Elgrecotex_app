@@ -924,24 +924,22 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- UPDATED PURCHASES COMPONENT (v5.9: New Fields + Excel Import) ---
+// --- UPDATED PURCHASES COMPONENT (v5.38: SUPPORTS LOC & DATE IMPORT) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
   
-  // State for manual input - Includes ALL your new fields
   const [item, setItem] = useState({ 
     fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' 
   });
 
-  // Reference for the hidden file input (REQUIRED FOR IMPORT)
   const fileInputRef = React.useRef(null);
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
 
-  // --- EXCEL IMPORT LOGIC (REQUIRED FOR IMPORT) ---
+  // --- EXCEL IMPORT LOGIC (UPDATED) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -958,19 +956,25 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
         // Map Excel columns to App structure
         const importedItems = data.map(row => {
             const getVal = (key) => row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || '';
-            const meters = parseFloat(getVal('Meters') || getVal('Qty') || 0);
-            const price = parseFloat(getVal('Price') || getVal('Cost') || 0);
+            
+            const meters = parseFloat(getVal('Meters') || getVal('Qty') || getVal('METERS') || 0);
+            const price = parseFloat(getVal('Price') || getVal('Cost') || getVal('PRICE') || 0);
             
             return {
-                fabricCode: getVal('Fabric Code') || getVal('Main Code') || 'UNKNOWN',
-                subCode: getVal('Roll Code') || getVal('Sub Code') || 'NEW', 
-                description: getVal('Description') || '',
-                designCol: getVal('Design/Col') || getVal('Design') || '',
-                rollColor: getVal('Color') || '',
-                quality: getVal('Quality') || '',
+                fabricCode: getVal('Fabric Code') || getVal('Main Code') || getVal('FABRIC') || 'UNKNOWN',
+                subCode: getVal('Roll Code') || getVal('Sub Code') || getVal('ROLLCODE') || 'NEW', 
+                description: getVal('Description') || getVal('DESCRIPTION') || '',
+                designCol: getVal('Design/Col') || getVal('Design') || getVal('DESIGN') || '',
+                rollColor: getVal('Color') || getVal('COLOR') || '',
+                quality: getVal('Quality') || getVal('QUALITY') || '',
                 qualityNo: getVal('Qual No') || getVal('Quality No') || '',
                 netKgr: getVal('Net Kgr') || getVal('Kgr') || '',
-                width: getVal('Width') || '',
+                width: getVal('Width') || getVal('WIDTH') || '',
+                
+                // NEW: Capture Location and Date from Excel
+                location: getVal('Location') || getVal('Loc') || getVal('LOC') || 'Warehouse',
+                dateAdded: getVal('Date') || getVal('DATE') || new Date().toISOString().split('T')[0],
+
                 meters: meters,
                 pricePerMeter: price,
                 totalPrice: meters * price
@@ -1009,7 +1013,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
     const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
     const final = subtotal + vat;
     
-    // Ensure numbers are stored as numbers
     const finalItems = newPurchase.items.map(i => ({
         ...i, 
         meters: parseFloat(i.meters), 
@@ -1040,9 +1043,11 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
           netKgr: purchasedItem.netKgr || '',
           width: purchasedItem.width || '',
           meters: parseFloat(purchasedItem.meters) || 0, 
-          location: 'Warehouse', 
           price: parseFloat(purchasedItem.pricePerMeter) || 0, 
-          dateAdded: new Date().toISOString().split('T')[0] 
+          
+          // CRITICAL: SAVE IMPORTED LOCATION AND DATE
+          location: purchasedItem.location || 'Warehouse', 
+          dateAdded: purchasedItem.dateAdded || new Date().toISOString().split('T')[0] 
         }); 
       });
       
@@ -1062,7 +1067,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   return (
     <div className="space-y-6">
-       {/* HIDDEN FILE INPUT */}
        <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
 
        <div className="flex justify-between items-center">
@@ -1081,14 +1085,14 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
        </div>
 
        {showAdd && (
-          <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
+         <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
              <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
              
              <div className="grid grid-cols-4 gap-6 mb-6">
-                <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
-                <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
-                <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.date} onChange={e => setNewPurchase({...newPurchase, date: e.target.value})} /></div>
-                <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.date} onChange={e => setNewPurchase({...newPurchase, date: e.target.value})} /></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
              </div>
 
              <div className="bg-emerald-50 p-4 rounded-xl mb-6">
@@ -1132,7 +1136,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                       <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm animate-in fade-in">
                          <div>
                             <p className="font-bold text-emerald-900">{i.fabricCode} <span className="text-slate-400">|</span> {i.subCode}</p>
-                            <p className="text-xs text-emerald-600">{i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.quality && `• ${i.quality}`} ({i.width})</p>
+                            <p className="text-xs text-emerald-600">{i.location ? `[${i.location}] ` : ''}{i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.width && `• ${i.width}cm`}</p>
                          </div>
                          <div className="text-right">
                             <p className="font-mono font-bold text-slate-700">{i.meters}m x €{i.pricePerMeter}</p>
@@ -1145,7 +1149,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
              </div>
 
              <div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={savePurchase} className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-emerald-700">Save Purchase</button></div>
-          </div>
+         </div>
        )}
 
        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
