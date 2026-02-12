@@ -336,7 +336,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-// 3. FULL BACKUP EXPORT (ALL SECTIONS + FIXED EXPENSES)
+// 3. FULL BACKUP EXPORT (SMART EXPENSES FIX)
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -395,17 +395,36 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
-      // E. EXPENSES (FIXED MAPPING)
-      const exp = (expenses || []).map(e => ({
-        "Date": e.date || '-',
-        "Company / Entity": e.entity || e.supplier || e.company || '-', 
-        "Category": e.category || '-',
-        "Description": e.description || '-',
-        "Net Value (€)": parseFloat(e.netAmount || e.net || 0),
-        "VAT (€)": parseFloat(e.vatAmount || e.vat || 0),
-        "Total Amount (€)": parseFloat(e.totalAmount || e.amount || 0), 
-        "Payment Method": e.paymentMethod || '-'
-      }));
+      // E. EXPENSES (DEEP SCAN FIX)
+      const exp = (expenses || []).map(e => {
+        // 1. Dig for descriptions inside items if main description is empty
+        const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
+        const finalDesc = e.description || itemDesc || '-';
+
+        // 2. Dig for Totals if main total is 0
+        let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
+        if (finalTotal === 0 && Array.isArray(e.items)) {
+          finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
+        }
+
+        // 3. Fix Net if missing (Total - VAT)
+        const vat = parseFloat(e.vatAmount || e.vat || 0);
+        let net = parseFloat(e.netAmount || e.net || 0);
+        if (net === 0 && finalTotal > 0) {
+          net = finalTotal - vat;
+        }
+
+        return {
+          "Date": e.date || '-',
+          "Company / Entity": e.entity || e.supplier || e.company || '-', 
+          "Category": e.category || '-',
+          "Description": finalDesc,
+          "Net Value (€)": parseFloat(net.toFixed(2)),
+          "VAT (€)": parseFloat(vat.toFixed(2)),
+          "Total Amount (€)": parseFloat(finalTotal.toFixed(2)), 
+          "Payment Method": e.paymentMethod || '-'
+        };
+      });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
       // F. Contacts
