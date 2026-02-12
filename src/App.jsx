@@ -487,7 +487,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.40: Fixed Edit Fabric Fields) ---
+// --- 5. INVENTORY TAB (v5.42: Restored Blue Roll Breakdown) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -504,7 +504,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 
   const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  // ADD NEW FABRIC
   const handleAddFabric = async () => {
     if (newFabricData.mainCode && newFabricData.name) {
       try {
@@ -515,7 +514,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     }
   };
 
-  // UPDATE FABRIC (FIXED: Now saves Supplier, Color, Price)
   const handleUpdateFabric = async () => {
     try {
       if (editingFabric?.id) {
@@ -533,7 +531,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
         let updatedRolls = Array.isArray(fabric?.rolls) ? [...fabric.rolls] : [];
         
         const finalDate = currentRoll.dateAdded || new Date().toISOString().split('T')[0];
-        
         const rollToSave = { 
             ...currentRoll, 
             dateAdded: finalDate,
@@ -604,7 +601,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
         </div>
       )}
 
-      {/* EDIT MODAL (RESTORED SUPPLIER & DETAILS) */}
       {editingFabric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
@@ -634,12 +630,27 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
           const rolls = rawRolls.filter(r => r && typeof r === 'object');
           const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
 
+          // --- LOGIC RESTORED: GROUP ROLLS BY SUBCODE ---
+          const rollSummary = rolls.reduce((acc, r) => {
+             const code = r.subCode || 'No Code';
+             acc[code] = (acc[code] || 0) + (parseFloat(r.meters) || 0);
+             return acc;
+          }, {});
+          const breakdownString = Object.entries(rollSummary)
+             .map(([code, meters]) => `${code} ${meters.toFixed(2)}m`)
+             .join(', ');
+
           return (
             <div key={fabric?.id || Math.random()} className="bg-white border rounded-xl shadow-sm overflow-hidden">
               <div className="p-5 bg-slate-50 flex justify-between items-center border-b">
                 <div>
                   <h3 className="font-bold text-lg text-slate-800"><HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - {fabric?.name}</h3>
                   <p className="text-sm text-slate-500">{totalMeters.toFixed(2)}m Total • {rolls.length} rolls • <span className="text-blue-500 font-bold">{fabric.supplier}</span></p>
+                  
+                  {/* --- VISUAL RESTORED: BLUE BOLD ROLL BREAKDOWN --- */}
+                  {breakdownString && (
+                    <p className="text-xs font-bold text-blue-600 mt-1 uppercase tracking-wide">{breakdownString}</p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-400 hover:text-blue-600"><Pencil size={20}/></button>
