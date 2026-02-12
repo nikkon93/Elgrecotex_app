@@ -336,12 +336,12 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-  // 3. FULL BACKUP EXPORT (ALL 6 SECTIONS WITH EXTENDED TEXTILE FIELDS)
+// 3. FULL BACKUP EXPORT (INVENTORY + SALES + PURCHASES + EXPENSES)
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
       
-      // A. Inventory (Now including all 14+ textile fields)
+      // A. Inventory (With all textile fields)
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
         "Fabric Code": f.mainCode, 
         "Fabric Name": f.name,
@@ -395,7 +395,17 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
-      // E. Contacts (Suppliers & Customers)
+      // E. EXPENSES (Restored!)
+      const exp = (expenses || []).map(e => ({
+        "Date": e.date,
+        "Category": e.category,
+        "Description": e.description,
+        "Amount": parseFloat(e.amount || 0),
+        "Payment Method": e.paymentMethod || '-'
+      }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
+
+      // F. Contacts
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
 
@@ -405,7 +415,6 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       alert("Export failed: " + e.message); 
     }
   };
-
   return (
     <div className="space-y-8 animate-in fade-in">
       <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
