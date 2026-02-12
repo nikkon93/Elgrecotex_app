@@ -336,12 +336,12 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-// 3. FULL BACKUP EXPORT (INVENTORY + SALES + PURCHASES + EXPENSES)
+// 3. FULL BACKUP EXPORT (ALL SECTIONS + FIXED EXPENSES)
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
       
-      // A. Inventory (With all textile fields)
+      // A. Inventory 
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
         "Fabric Code": f.mainCode, 
         "Fabric Name": f.name,
@@ -395,12 +395,15 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
-      // E. EXPENSES (Restored!)
+      // E. EXPENSES (FIXED MAPPING)
       const exp = (expenses || []).map(e => ({
-        "Date": e.date,
-        "Category": e.category,
-        "Description": e.description,
-        "Amount": parseFloat(e.amount || 0),
+        "Date": e.date || '-',
+        "Company / Entity": e.entity || e.supplier || e.company || '-', 
+        "Category": e.category || '-',
+        "Description": e.description || '-',
+        "Net Value (€)": parseFloat(e.netAmount || e.net || 0),
+        "VAT (€)": parseFloat(e.vatAmount || e.vat || 0),
+        "Total Amount (€)": parseFloat(e.totalAmount || e.amount || 0), 
         "Payment Method": e.paymentMethod || '-'
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
