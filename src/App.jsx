@@ -314,135 +314,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
-// --- DASHBOARD (Fixed: Export with Date + Smart Expenses) ---
-const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
-  
-  const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
-  const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
-  const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
-
-  const totalStockMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
-  const netPurchases = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
-  const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.amount || e.netPrice) || 0), 0);
-  const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
-  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
-  const vatCollected = filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0);
-  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice || e.amount) || 0), 0);
-  const netProfit = totalRevenue - (netPurchases + netExpenses);
-  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
-
-  // EXPORT LOGIC
-  const handleFullExport = () => {
-    try {
-      const wb = XLSX.utils.book_new();
-      
-      // A. Inventory (Includes Date Added)
-      const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
-        "Date Added": r.dateAdded || '-', 
-        "Fabric Code": f.mainCode, 
-        "Fabric Name": f.name,
-        "Supplier": f.supplier || '-',
-        "Roll Code": r.subCode || r.rollCode || '-', 
-        "Unique ID": r.rollId || '-',
-        "Meters": parseFloat(r.meters || 0), 
-        "Width (cm)": r.width || '-',
-        "Location (Loc)": r.location || '-',
-        "Quality": r.quality || '-',
-        "Design/Col": r.designCol || '-',
-        "Description": r.description || '-',
-        "Price": parseFloat(r.price || 0),
-        "Photo Link": r.image || ''
-      })));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
-
-      // B. Sales 
-      const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-        "Date": o.date, 
-        "Invoice": o.invoiceNo, 
-        "Customer": o.customer, 
-        "Fabric Code": i.fabricCode, 
-        "Roll Code": i.subCode || i.rollCode, 
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice,
-        "Status": o.status
-      })));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
-
-      // C. Purchases
-      const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
-        "Date": p.date, 
-        "Supplier": p.supplier, 
-        "Invoice": p.invoiceNo, 
-        "Fabric Code": i.fabricCode, 
-        "Roll Code": i.subCode || i.rollCode, 
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice 
-      })));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
-
-      // D. Samples
-      const sam = (samples || []).flatMap(s => (s.items || []).map(i => ({ 
-        "Date": s.date, 
-        "Customer": s.customer, 
-        "Fabric": i.fabricCode, 
-        "Meters": i.meters,
-        "Notes": s.notes || '' 
-      })));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
-
-      // E. EXPENSES (Fixes 0 Totals)
-      const exp = (expenses || []).map(e => {
-        const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
-        const finalDesc = e.description || itemDesc || '-';
-
-        let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
-        if (finalTotal === 0 && Array.isArray(e.items)) {
-          finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
-        }
-
-        const vat = parseFloat(e.vatAmount || e.vat || 0);
-        let net = parseFloat(e.netAmount || e.net || 0);
-        if (net === 0 && finalTotal > 0) {
-          net = finalTotal - vat;
-        }
-
-        return {
-          "Date": e.date || '-',
-          "Company / Entity": e.entity || e.supplier || e.company || '-', 
-          "Category": e.category || '-',
-          "Description": finalDesc,
-          "Net Value (€)": parseFloat(net.toFixed(2)),
-          "VAT (€)": parseFloat(vat.toFixed(2)),
-          "Total Amount (€)": parseFloat(finalTotal.toFixed(2)), 
-          "Payment Method": e.paymentMethod || '-'
-        };
-      });
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
-
-      // F. Contacts
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
-
-      XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (e) { alert("Export failed: " + e.message); }
-  };
-
-  return (
-    <div className="space-y-8 animate-in fade-in">
-      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
-        <div><h2 className="text-2xl font-bold text-slate-800">Financial Overview</h2><p className="text-slate-500">Selected: {dateRangeStart} to {dateRangeEnd}</p></div>
-        <button onClick={handleFullExport} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 hover:bg-emerald-700 transition-all"><FileSpreadsheet size={20}/> Export Full Backup</button>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" />
-        <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" />
-        <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" />
-        <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color="purple" />
-      </div>
-    </div>
-  );
-};
-// --- HELPER COMPONENT: DASHBOARD CARD ---
+// --- HELPER: DASHBOARD CARD ---
 const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) => {
   const colors = { 
     blue: "bg-blue-50 text-blue-600 border-blue-100", 
@@ -451,7 +323,6 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     amber: "bg-amber-50 text-amber-600 border-amber-100",
     red: "bg-red-50 text-red-600 border-red-100"
   };
-  
   return (
     <div onClick={onClick} className={`bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer group`}>
       <div className="flex justify-between items-start">
@@ -460,9 +331,139 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
           <h4 className="text-3xl font-extrabold text-slate-800">{value}</h4>
           {subValue && <p className="text-xs font-medium text-slate-400 mt-2">{subValue}</p>}
         </div>
-        <div className={`p-3 rounded-xl ${colors[color]}`}>
-          <Icon size={24} />
+        <div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24} /></div>
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN DASHBOARD (v5.41: Restored Financials + Fixed Export) ---
+const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
+  
+  // 1. FILTER DATA BY DATE
+  const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
+  const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
+  const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
+
+  // 2. CALCULATE METRICS (RESTORED)
+  const totalStockMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
+  
+  const netPurchases = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
+  const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.amount || e.netPrice) || 0), 0);
+  const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
+  
+  const vatPaid = filteredPurchases.reduce((s, p) => s + (parseFloat(p.vatAmount) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.vatAmount) || 0), 0);
+  const vatCollected = filteredOrders.reduce((s, o) => s + (parseFloat(o.vatAmount) || 0), 0);
+  
+  const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice || e.amount) || 0), 0);
+  const netProfit = totalRevenue - (netPurchases + netExpenses);
+  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+
+  // 3. EXPORT FUNCTION (FIXED)
+  const handleFullExport = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      
+      // A. Inventory 
+      const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
+        "Date Added": r.dateAdded || '-',
+        "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
+        "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
+        "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
+
+      // B. Sales 
+      const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
+        "Date": o.date, "Invoice": o.invoiceNo, "Customer": o.customer, 
+        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
+
+      // C. Purchases
+      const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
+        "Date": p.date, "Supplier": p.supplier, "Invoice": p.invoiceNo, 
+        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice 
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
+
+      // E. Expenses (Deep Logic)
+      const exp = (expenses || []).map(e => {
+        const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
+        const finalDesc = e.description || itemDesc || '-';
+        let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
+        if (finalTotal === 0 && Array.isArray(e.items)) {
+          finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
+        }
+        const vat = parseFloat(e.vatAmount || e.vat || 0);
+        let net = parseFloat(e.netAmount || e.net || 0);
+        if (net === 0 && finalTotal > 0) net = finalTotal - vat;
+
+        return {
+          "Date": e.date || '-', "Company": e.entity || e.supplier || e.company || '-', 
+          "Description": finalDesc, "Net Value": parseFloat(net.toFixed(2)),
+          "VAT": parseFloat(vat.toFixed(2)), "Total": parseFloat(finalTotal.toFixed(2))
+        };
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
+
+      XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) { alert("Export failed: " + e.message); }
+  };
+
+  return (
+    <div className="space-y-8 animate-in fade-in">
+      {/* HEADER */}
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800">Financial Overview</h2>
+          <p className="text-slate-500">Selected: {dateRangeStart} to {dateRangeEnd}</p>
         </div>
+        <button onClick={handleFullExport} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg flex items-center gap-2 hover:bg-emerald-700 transition-all">
+          <FileSpreadsheet size={20}/> Export Full Backup
+        </button>
+      </div>
+
+      {/* METRIC CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" onClick={() => onNavigate('inventory')}/>
+        <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('sales')}/>
+        <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('sales')}/>
+        <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color={netProfit >= 0 ? "emerald" : "red"} onClick={() => onNavigate('dashboard')}/>
+      </div>
+
+      {/* DETAILED MONEY FLOW (RESTORED) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-8 rounded-2xl border shadow-sm">
+          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">Money Out (Expenses)</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between border-b pb-2"><span>Fabric Purchases (Net)</span><span className="font-bold">€{netPurchases.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2"><span>Other Expenses (Net)</span><span className="font-bold">€{netExpenses.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2 text-slate-400 italic"><span>VAT Paid to Suppliers</span><span>€{vatPaid.toFixed(2)}</span></div>
+            <div className="pt-4 flex justify-between text-xl font-black text-red-600"><span>TOTAL CASH OUT</span><span>€{totalCashOut.toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-2xl border shadow-sm">
+          <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">Money In (Income)</h3>
+          <div className="space-y-4">
+            <div className="flex justify-between border-b pb-2"><span>Sales Revenue (Net)</span><span className="font-bold text-emerald-600">€{totalRevenue.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2 text-slate-400 italic"><span>VAT Collected from Customers</span><span>€{vatCollected.toFixed(2)}</span></div>
+            <div className="flex justify-between border-b pb-2"><span>VAT Balance (Payable)</span><span className={`font-bold ${vatCollected - vatPaid > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>€{(vatCollected - vatPaid).toFixed(2)}</span></div>
+            <div className="pt-4 flex justify-between text-xl font-black text-slate-900"><span>GROSS TOTAL</span><span>€{(totalRevenue + vatCollected).toFixed(2)}</span></div>
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK ACTIONS BUTTONS (RESTORED) */}
+      <div className="bg-white p-6 rounded-2xl border shadow-sm">
+         <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <button onClick={() => onNavigate('sales')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Invoice & Stock</div></button>
+            <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add Stock</div></button>
+            <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Stock Status</div><div className="text-xs text-slate-400">View Rolls</div></button>
+            <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Samples</div><div className="text-xs text-slate-400">Log Shipments</div></button>
+         </div>
       </div>
     </div>
   );
