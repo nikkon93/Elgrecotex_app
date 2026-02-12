@@ -359,58 +359,98 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-  // 3. EXPORT FUNCTION (FIXED)
+  // 3. FULL BACKUP EXPORT (v5.43: All 7 Sheets Restored)
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
       
-      // A. Inventory 
+      // 1. INVENTORY (With Date & Locations)
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
         "Date Added": r.dateAdded || '-',
-        "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
-        "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
-        "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
+        "Fabric Code": f.mainCode, 
+        "Fabric Name": f.name, 
+        "Supplier": f.supplier || '-',
+        "Roll Code": r.subCode || '-', 
+        "Meters": parseFloat(r.meters || 0), 
+        "Width": r.width || '-', 
+        "Loc": r.location || '-', 
+        "Price": parseFloat(r.price || 0)
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
 
-      // B. Sales 
+      // 2. SALES
       const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-        "Date": o.date, "Invoice": o.invoiceNo, "Customer": o.customer, 
-        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice
+        "Date": o.date, 
+        "Invoice": o.invoiceNo, 
+        "Customer": o.customer, 
+        "Fabric": i.fabricCode, 
+        "Qty": i.meters, 
+        "Net Price": i.totalPrice
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
-      // C. Purchases
+      // 3. PURCHASES
       const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
-        "Date": p.date, "Supplier": p.supplier, "Invoice": p.invoiceNo, 
-        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice 
+        "Date": p.date, 
+        "Supplier": p.supplier, 
+        "Invoice": p.invoiceNo, 
+        "Fabric": i.fabricCode, 
+        "Qty": i.meters, 
+        "Net Price": i.totalPrice 
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
-      // E. Expenses (Deep Logic)
+      // 4. EXPENSES (With Smart Logic)
       const exp = (expenses || []).map(e => {
         const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
         const finalDesc = e.description || itemDesc || '-';
         let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
+        
+        // Sum items if main total is zero
         if (finalTotal === 0 && Array.isArray(e.items)) {
           finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
         }
+        
         const vat = parseFloat(e.vatAmount || e.vat || 0);
         let net = parseFloat(e.netAmount || e.net || 0);
+        // Calculate Net if missing
         if (net === 0 && finalTotal > 0) net = finalTotal - vat;
 
         return {
-          "Date": e.date || '-', "Company": e.entity || e.supplier || e.company || '-', 
-          "Description": finalDesc, "Net Value": parseFloat(net.toFixed(2)),
-          "VAT": parseFloat(vat.toFixed(2)), "Total": parseFloat(finalTotal.toFixed(2))
+          "Date": e.date || '-', 
+          "Company": e.entity || e.supplier || e.company || '-', 
+          "Description": finalDesc, 
+          "Net Value": parseFloat(net.toFixed(2)),
+          "VAT": parseFloat(vat.toFixed(2)), 
+          "Total": parseFloat(finalTotal.toFixed(2))
         };
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
-      XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (e) { alert("Export failed: " + e.message); }
-  };
+      // 5. SAMPLES (Restored!)
+      const sam = (samples || []).flatMap(s => (s.items || []).map(i => ({ 
+        "Date": s.date, 
+        "Customer": s.customer, 
+        "Fabric": i.fabricCode, 
+        "Description": i.description || '-',
+        "Meters": i.meters || 'Swatch',
+        "Notes": s.notes || '' 
+      })));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
+      // 6. SUPPLIERS (Restored!)
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
+
+      // 7. CUSTOMERS (Restored!)
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
+
+      // Save File
+      XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) { 
+      console.error(e);
+      alert("Export failed: " + e.message); 
+    }
+  };
   return (
     <div className="space-y-8 animate-in fade-in">
       {/* HEADER */}
