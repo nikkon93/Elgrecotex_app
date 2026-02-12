@@ -924,7 +924,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- UPDATED PURCHASES COMPONENT (v5.38: SUPPORTS LOC & DATE IMPORT) ---
+// --- UPDATED PURCHASES COMPONENT (v5.39: Fixes "Unknown Fabric" & Number vs String) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -939,7 +939,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
 
-  // --- EXCEL IMPORT LOGIC (UPDATED) ---
+  // --- EXCEL IMPORT LOGIC (TYPE SAFE) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -955,25 +955,37 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
         // Map Excel columns to App structure
         const importedItems = data.map(row => {
-            const getVal = (key) => row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || '';
+            // Helper to safely get value regardless of Capitalization
+            const getVal = (key) => {
+                const val = row[key] || row[key.toLowerCase()] || row[key.toUpperCase()];
+                return val === undefined || val === null ? '' : val;
+            };
             
-            const meters = parseFloat(getVal('Meters') || getVal('Qty') || getVal('METERS') || 0);
-            const price = parseFloat(getVal('Price') || getVal('Cost') || getVal('PRICE') || 0);
+            // 1. SAFE FABRIC CODE (Force to String to fix "Unknown" bug)
+            let rawCode = getVal('FABRIC') || getVal('Fabric Code') || getVal('Main Code');
+            const safeFabricCode = rawCode ? String(rawCode).trim() : 'UNKNOWN';
+
+            // 2. SAFE ROLL CODE (Force to String)
+            let rawRoll = getVal('ROLLCODE') || getVal('Roll Code') || getVal('Sub Code');
+            const safeRollCode = rawRoll ? String(rawRoll).trim() : 'NEW';
+
+            const meters = parseFloat(getVal('METERS') || getVal('Meters') || getVal('Qty') || 0);
+            const price = parseFloat(getVal('PRICE') || getVal('Price') || 0);
             
             return {
-                fabricCode: getVal('Fabric Code') || getVal('Main Code') || getVal('FABRIC') || 'UNKNOWN',
-                subCode: getVal('Roll Code') || getVal('Sub Code') || getVal('ROLLCODE') || 'NEW', 
-                description: getVal('Description') || getVal('DESCRIPTION') || '',
-                designCol: getVal('Design/Col') || getVal('Design') || getVal('DESIGN') || '',
-                rollColor: getVal('Color') || getVal('COLOR') || '',
-                quality: getVal('Quality') || getVal('QUALITY') || '',
-                qualityNo: getVal('Qual No') || getVal('Quality No') || '',
-                netKgr: getVal('Net Kgr') || getVal('Kgr') || '',
-                width: getVal('Width') || getVal('WIDTH') || '',
+                fabricCode: safeFabricCode,
+                subCode: safeRollCode, 
+                description: String(getVal('DESCRIPTION') || getVal('Description') || ''),
+                designCol: String(getVal('DESIGN') || getVal('Design') || ''),
+                rollColor: String(getVal('COLOR') || getVal('Color') || ''),
+                quality: String(getVal('QUALITY') || getVal('Quality') || ''),
+                qualityNo: String(getVal('Quality No') || ''),
+                netKgr: String(getVal('Kgr') || ''),
+                width: String(getVal('WIDTH') || getVal('Width') || ''),
                 
-                // NEW: Capture Location and Date from Excel
-                location: getVal('Location') || getVal('Loc') || getVal('LOC') || 'Warehouse',
-                dateAdded: getVal('Date') || getVal('DATE') || new Date().toISOString().split('T')[0],
+                // Location & Date
+                location: String(getVal('LOC') || getVal('Location') || 'Warehouse'),
+                dateAdded: getVal('DATE') || getVal('Date') || new Date().toISOString().split('T')[0],
 
                 meters: meters,
                 pricePerMeter: price,
@@ -1044,15 +1056,15 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
           width: purchasedItem.width || '',
           meters: parseFloat(purchasedItem.meters) || 0, 
           price: parseFloat(purchasedItem.pricePerMeter) || 0, 
-          
-          // CRITICAL: SAVE IMPORTED LOCATION AND DATE
           location: purchasedItem.location || 'Warehouse', 
           dateAdded: purchasedItem.dateAdded || new Date().toISOString().split('T')[0] 
         }); 
       });
       
       for (const [code, newRolls] of Object.entries(rollsByFabric)) { 
-        const existingFabric = fabrics.find(f => f.mainCode === code); 
+        // FIX: Ensure both sides are Strings for comparison
+        const existingFabric = fabrics.find(f => String(f.mainCode) === String(code)); 
+        
         if (existingFabric) { 
           await updateDoc(doc(db, "fabrics", existingFabric.id), { rolls: [...(existingFabric.rolls || []), ...newRolls] }); 
         } else { 
@@ -1098,7 +1110,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
              <div className="bg-emerald-50 p-4 rounded-xl mb-6">
                 <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Add Items / Rolls</h4>
                 
-                {/* Manual Input Form */}
                 <div className="grid grid-cols-12 gap-3 mb-3">
                    <div className="col-span-3">
                       <label className="text-[10px] font-bold text-emerald-700 uppercase">Fabric Code</label>
@@ -1130,7 +1141,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                    <div className="col-span-8 flex items-end"><button onClick={addItem} className="w-full bg-emerald-600 text-white py-2 rounded font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">Add Item To List</button></div>
                 </div>
 
-                {/* Items List (Manual + Imported) */}
                 <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                    {newPurchase.items.length > 0 ? newPurchase.items.map((i, idx) => (
                       <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm animate-in fade-in">
