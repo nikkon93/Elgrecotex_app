@@ -991,7 +991,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- UPDATED PURCHASES COMPONENT (v5.39: Fixes "Unknown Fabric" & Number vs String) ---
+// --- UPDATED PURCHASES COMPONENT (v5.44: Fixes Excel Serial Dates) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1006,7 +1006,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
 
-  // --- EXCEL IMPORT LOGIC (TYPE SAFE) ---
+  // --- EXCEL IMPORT LOGIC (SMART DATES) ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1020,25 +1020,45 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
         const ws = wb.Sheets[wsName];
         const data = XLSX.utils.sheet_to_json(ws);
 
-        // Map Excel columns to App structure
         const importedItems = data.map(row => {
-            // Helper to safely get value regardless of Capitalization
             const getVal = (key) => {
                 const val = row[key] || row[key.toLowerCase()] || row[key.toUpperCase()];
                 return val === undefined || val === null ? '' : val;
             };
             
-            // 1. SAFE FABRIC CODE (Force to String to fix "Unknown" bug)
             let rawCode = getVal('FABRIC') || getVal('Fabric Code') || getVal('Main Code');
             const safeFabricCode = rawCode ? String(rawCode).trim() : 'UNKNOWN';
 
-            // 2. SAFE ROLL CODE (Force to String)
             let rawRoll = getVal('ROLLCODE') || getVal('Roll Code') || getVal('Sub Code');
             const safeRollCode = rawRoll ? String(rawRoll).trim() : 'NEW';
 
             const meters = parseFloat(getVal('METERS') || getVal('Meters') || getVal('Qty') || 0);
             const price = parseFloat(getVal('PRICE') || getVal('Price') || 0);
             
+            // --- SMART EXCEL DATE CONVERTER ---
+            let rawDate = getVal('DATE') || getVal('Date');
+            let finalDate = new Date().toISOString().split('T')[0]; // Default to today
+            
+            if (rawDate) {
+                if (typeof rawDate === 'number') {
+                    // Convert Excel serial number (e.g. 46066) to actual Date (YYYY-MM-DD)
+                    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + rawDate);
+                    finalDate = excelEpoch.toISOString().split('T')[0];
+                } else {
+                    // If it is already text, clean it up
+                    finalDate = String(rawDate).trim();
+                    
+                    // Fallback: If text format is DD/MM/YYYY, auto-correct it to YYYY-MM-DD
+                    if (finalDate.includes('/')) {
+                        const parts = finalDate.split('/');
+                        if(parts.length === 3 && parts[2].length === 4) {
+                            finalDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        }
+                    }
+                }
+            }
+
             return {
                 fabricCode: safeFabricCode,
                 subCode: safeRollCode, 
@@ -1050,9 +1070,8 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                 netKgr: String(getVal('Kgr') || ''),
                 width: String(getVal('WIDTH') || getVal('Width') || ''),
                 
-                // Location & Date
                 location: String(getVal('LOC') || getVal('Location') || 'Warehouse'),
-                dateAdded: getVal('DATE') || getVal('Date') || new Date().toISOString().split('T')[0],
+                dateAdded: finalDate, // Saved correct date!
 
                 meters: meters,
                 pricePerMeter: price,
@@ -1106,7 +1125,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
     } else { 
       await addDoc(collection(db, "purchases"), purchaseData);
       
-      // AUTO-CREATE ROLLS IN INVENTORY
       const rollsByFabric = {};
       finalItems.forEach(purchasedItem => { 
         const code = purchasedItem.fabricCode; 
@@ -1129,7 +1147,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
       });
       
       for (const [code, newRolls] of Object.entries(rollsByFabric)) { 
-        // FIX: Ensure both sides are Strings for comparison
         const existingFabric = fabrics.find(f => String(f.mainCode) === String(code)); 
         
         if (existingFabric) { 
