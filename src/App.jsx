@@ -755,7 +755,74 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     </div>
   );
 };
-// --- UPDATED SALES INVOICES (v5.45: Searchable Customer & Fabric Dropdowns) ---
+// --- HELPER COMPONENT: SEARCHABLE DROPDOWN ---
+const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled = false }) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const wrapperRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+        setSearch(''); // Reset search if clicked away
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selected = options.find(o => String(o.value) === String(value));
+  const displayValue = isOpen ? search : (selected ? selected.label : '');
+
+  const filtered = options.filter(o => 
+    String(o.label).toLowerCase().includes(search.toLowerCase()) || 
+    String(o.value).toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <div className="relative">
+        <input 
+          type="text" 
+          className={`w-full border p-3 rounded-lg outline-none transition-all pr-10 ${disabled ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 border-slate-300 shadow-sm'}`}
+          placeholder={placeholder}
+          value={displayValue}
+          disabled={disabled}
+          onChange={e => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+            if (value) onChange(''); // Clear actual value when typing a new search
+          }}
+          onClick={() => { if(!disabled) setIsOpen(true); }}
+        />
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">▼</div>
+      </div>
+      
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+          {filtered.length > 0 ? filtered.map(o => (
+            <div 
+              key={o.value} 
+              className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm text-slate-700 transition-colors"
+              onClick={() => { 
+                onChange(o.value); 
+                setIsOpen(false); 
+                setSearch(''); 
+              }}
+            >
+              {o.label}
+            </div>
+          )) : (
+            <div className="p-3 text-sm text-slate-400 italic">No results found</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- UPDATED SALES INVOICES (v5.46: Searchable Combo Boxes) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -765,7 +832,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
   
   // Helper to find the currently selected fabric to show its rolls
-  const selectedFabric = fabrics.find(f => f.mainCode === item.fabricCode);
+  const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
 
@@ -785,7 +852,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const addItem = () => { 
     if (item.rollId && item.meters && item.pricePerMeter) { 
-        // Find the specific roll to get its details
         const roll = selectedFabric?.rolls?.find(r => String(r.rollId) === String(item.rollId)); 
         if (!roll) return; 
 
@@ -803,16 +869,15 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             }] 
         }); 
         setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); 
+    } else {
+        alert("Please complete all fabric fields (Fabric, Roll, Meters, Price) before adding.");
     }
   };
 
-  // --- CRITICAL FUNCTION: DEDUCT STOCK ---
   const deductStock = async (orderItems) => { 
     for (const orderItem of orderItems) { 
-        // 1. Find the Fabric
-        const fabric = fabrics.find(f => f.mainCode === orderItem.fabricCode); 
+        const fabric = fabrics.find(f => String(f.mainCode) === String(orderItem.fabricCode)); 
         if(fabric) { 
-            // 2. Find the specific Roll inside that fabric and subtract meters
             const updatedRolls = fabric.rolls.map(r => { 
                 if(String(r.rollId) === String(orderItem.rollId)) { 
                     const currentMeters = parseFloat(r.meters || 0);
@@ -822,13 +887,14 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 } 
                 return r; 
             }); 
-            // 3. Update the Database
             await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls }); 
         }
     }
   };
 
   const saveOrder = async () => { 
+    if(!newOrder.customer) return alert("Please select a customer.");
+
     const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); 
     const vat = subtotal * (newOrder.vatRate / 100); 
     const final = subtotal + vat; 
@@ -873,73 +939,72 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
       {showAdd && (
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 animate-in fade-in">
-          <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl text-slate-800">{editingId ? 'Edit Invoice' : 'New Invoice'}</h3><button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600"><X/></button></div>
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold text-xl text-slate-800">{editingId ? 'Edit Invoice' : 'New Invoice'}</h3>
+             <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600"><X/></button>
+          </div>
+          
           <div className="mb-4 bg-blue-50 p-3 rounded-lg flex items-center gap-2">
              <Hash size={16} className="text-blue-500"/> 
              <span className="text-sm font-bold text-blue-800">Internal Order ID:</span> 
              <span className="font-mono text-sm text-blue-600">{newOrder.orderId || 'Auto-generated on save'}</span>
           </div>
 
-          <div className="grid grid-cols-5 gap-6 mb-8">
-            {/* SEARCHABLE CUSTOMER DROPDOWN */}
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase">Customer</label>
-              <input 
-                className="w-full border p-3 rounded-lg bg-slate-50 mt-1" 
-                list="sales-customer-list" 
-                placeholder="Type to search..." 
-                value={newOrder.customer} 
-                onChange={e => setNewOrder({ ...newOrder, customer: e.target.value })} 
+          <div className="grid grid-cols-5 gap-6 mb-8 items-end">
+            {/* NEW: Custom Searchable Customer Dropdown */}
+            <div className="col-span-2">
+              <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Customer</label>
+              <SearchableSelect 
+                options={(customers || []).map(c => ({ value: c.name, label: c.name }))}
+                value={newOrder.customer}
+                onChange={(val) => setNewOrder({ ...newOrder, customer: val })}
+                placeholder="Search or Select Customer..."
               />
-              <datalist id="sales-customer-list">
-                {(customers || []).map(c => <option key={c.id} value={c.name} />)}
-              </datalist>
             </div>
             
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Status</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Invoice #</label><input className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Date</label><input type="date" className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Status</label><select className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white font-bold text-blue-800" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
           </div>
           
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
             <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Select Stock to Sell</h4>
-            <div className="flex gap-4 mb-4">
+            <div className="flex gap-4 mb-4 items-end">
               
-              {/* SEARCHABLE FABRIC CODE DROPDOWN */}
+              {/* NEW: Custom Searchable Fabric Dropdown */}
               <div className="flex-1">
-                  <input 
-                    className="w-full border p-3 rounded-lg bg-white" 
-                    list="sales-fabric-list" 
-                    placeholder="Type fabric code..." 
-                    value={item.fabricCode} 
-                    onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })} 
+                  <label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Fabric Code</label>
+                  <SearchableSelect 
+                    options={fabrics.map(f => ({ value: f.mainCode, label: `${f.mainCode} - ${f.name}` }))}
+                    value={item.fabricCode}
+                    onChange={(val) => setItem({ ...item, fabricCode: val, rollId: '' })}
+                    placeholder="Search Fabric..."
                   />
-                  <datalist id="sales-fabric-list">
-                    {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.name}</option>)}
-                  </datalist>
               </div>
 
-              {/* Specific Roll Select (Requires Fabric to be chosen first) */}
+              {/* NEW: Custom Searchable Roll Dropdown */}
               <div className="flex-1">
-                  <select className="w-full border p-3 rounded-lg bg-white" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}>
-                    <option value="">-- Select Roll --</option>
-                    {selectedFabric?.rolls?.map(r => (
-                        <option key={r.rollId} value={r.rollId}>
-                            {r.subCode} | {r.rollColor ? r.rollColor : 'No Color'} | {r.meters}m Available
-                        </option>
-                    ))}
-                  </select>
+                  <label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Roll ID</label>
+                  <SearchableSelect 
+                    options={(selectedFabric?.rolls || []).map(r => ({ 
+                      value: r.rollId, 
+                      label: `${r.subCode} | ${r.rollColor || '-'} | ${(parseFloat(r.meters)||0).toFixed(2)}m (${r.location || 'Loc?'})` 
+                    }))}
+                    value={item.rollId}
+                    onChange={(val) => setItem({ ...item, rollId: val })}
+                    placeholder="Select Roll..."
+                    disabled={!item.fabricCode}
+                  />
               </div>
 
-              <input type="number" placeholder="Meters" className="border p-3 rounded-lg w-32 bg-white" value={item.meters} onChange={e => setItem({ ...item, meters: e.target.value })} />
-              <input type="number" placeholder="Price/M" className="border p-3 rounded-lg w-32 bg-white" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} />
-              <button onClick={addItem} className="bg-blue-600 text-white px-6 rounded-lg font-bold shadow-lg shadow-blue-200">Add</button>
+              <div className="w-24"><label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Meters</label><input type="number" placeholder="Meters" className="border border-slate-300 shadow-sm p-3 rounded-lg w-full bg-white font-bold" value={item.meters} onChange={e => setItem({ ...item, meters: e.target.value })} /></div>
+              <div className="w-28"><label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Price/M (€)</label><input type="number" placeholder="Price" className="border border-slate-300 shadow-sm p-3 rounded-lg w-full bg-white font-bold" value={item.pricePerMeter} onChange={e => setItem({ ...item, pricePerMeter: e.target.value })} /></div>
+              <button onClick={addItem} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 h-[50px]">Add</button>
             </div>
 
             {/* List Items */}
             {(newOrder.items||[]).length > 0 && (
-                <div className="bg-white rounded-lg border overflow-hidden">
+                <div className="bg-white rounded-lg border overflow-hidden mt-6">
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3">Item</th><th className="text-right p-3">Details</th><th className="text-right p-3">Total</th><th className="text-right p-3"></th></tr></thead>
                         <tbody>
@@ -1003,277 +1068,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
       </div>
     </div>
   );
-};
-// --- UPDATED PURCHASES COMPONENT (v5.44: Fixes Excel Serial Dates) ---
-const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [viewInvoice, setViewInvoice] = useState(null);
-  const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
-  
-  const [item, setItem] = useState({ 
-    fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' 
-  });
-
-  const fileInputRef = React.useRef(null);
-
-  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
-
-  // --- EXCEL IMPORT LOGIC (SMART DATES) ---
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsName = wb.SheetNames[0];
-        const ws = wb.Sheets[wsName];
-        const data = XLSX.utils.sheet_to_json(ws);
-
-        const importedItems = data.map(row => {
-            const getVal = (key) => {
-                const val = row[key] || row[key.toLowerCase()] || row[key.toUpperCase()];
-                return val === undefined || val === null ? '' : val;
-            };
-            
-            let rawCode = getVal('FABRIC') || getVal('Fabric Code') || getVal('Main Code');
-            const safeFabricCode = rawCode ? String(rawCode).trim() : 'UNKNOWN';
-
-            let rawRoll = getVal('ROLLCODE') || getVal('Roll Code') || getVal('Sub Code');
-            const safeRollCode = rawRoll ? String(rawRoll).trim() : 'NEW';
-
-            const meters = parseFloat(getVal('METERS') || getVal('Meters') || getVal('Qty') || 0);
-            const price = parseFloat(getVal('PRICE') || getVal('Price') || 0);
-            
-            // --- SMART EXCEL DATE CONVERTER ---
-            let rawDate = getVal('DATE') || getVal('Date');
-            let finalDate = new Date().toISOString().split('T')[0]; // Default to today
-            
-            if (rawDate) {
-                if (typeof rawDate === 'number') {
-                    // Convert Excel serial number (e.g. 46066) to actual Date (YYYY-MM-DD)
-                    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-                    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + rawDate);
-                    finalDate = excelEpoch.toISOString().split('T')[0];
-                } else {
-                    // If it is already text, clean it up
-                    finalDate = String(rawDate).trim();
-                    
-                    // Fallback: If text format is DD/MM/YYYY, auto-correct it to YYYY-MM-DD
-                    if (finalDate.includes('/')) {
-                        const parts = finalDate.split('/');
-                        if(parts.length === 3 && parts[2].length === 4) {
-                            finalDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                        }
-                    }
-                }
-            }
-
-            return {
-                fabricCode: safeFabricCode,
-                subCode: safeRollCode, 
-                description: String(getVal('DESCRIPTION') || getVal('Description') || ''),
-                designCol: String(getVal('DESIGN') || getVal('Design') || ''),
-                rollColor: String(getVal('COLOR') || getVal('Color') || ''),
-                quality: String(getVal('QUALITY') || getVal('Quality') || ''),
-                qualityNo: String(getVal('Quality No') || ''),
-                netKgr: String(getVal('Kgr') || ''),
-                width: String(getVal('WIDTH') || getVal('Width') || ''),
-                
-                location: String(getVal('LOC') || getVal('Location') || 'Warehouse'),
-                dateAdded: finalDate, // Saved correct date!
-
-                meters: meters,
-                pricePerMeter: price,
-                totalPrice: meters * price
-            };
-        }).filter(i => i.meters > 0);
-
-        if(importedItems.length > 0) {
-            setNewPurchase(prev => ({ ...prev, items: [...prev.items, ...importedItems] }));
-            setShowAdd(true);
-            alert(`Successfully imported ${importedItems.length} items!`);
-        } else {
-            alert("No valid items found. Please check Excel headers.");
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Error reading file.");
-      }
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = null; 
-  };
-
-  const addItem = () => { 
-    if(item.fabricCode && item.meters && item.pricePerMeter) { 
-      const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); 
-      setNewPurchase({
-        ...newPurchase, 
-        items: [...newPurchase.items, { ...item, subCode: item.rollCode, totalPrice: total }] 
-      }); 
-      setItem({ fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' }); 
-    }
-  };
-
-  const savePurchase = async () => {
-    const subtotal = newPurchase.items.reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
-    const vat = subtotal * (parseFloat(newPurchase.vatRate) / 100);
-    const final = subtotal + vat;
-    
-    const finalItems = newPurchase.items.map(i => ({
-        ...i, 
-        meters: parseFloat(i.meters), 
-        pricePerMeter: parseFloat(i.pricePerMeter), 
-        totalPrice: parseFloat(i.totalPrice) 
-    }));
-
-    const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final, items: finalItems };
-    
-    if(editingId) { 
-      await updateDoc(doc(db, "purchases", editingId), purchaseData); 
-    } else { 
-      await addDoc(collection(db, "purchases"), purchaseData);
-      
-      const rollsByFabric = {};
-      finalItems.forEach(purchasedItem => { 
-        const code = purchasedItem.fabricCode; 
-        if (!rollsByFabric[code]) rollsByFabric[code] = []; 
-        rollsByFabric[code].push({ 
-          rollId: Date.now() + Math.random(), 
-          subCode: purchasedItem.subCode || 'NEW', 
-          description: purchasedItem.description || '', 
-          designCol: purchasedItem.designCol || '',
-          rollColor: purchasedItem.rollColor || '',
-          quality: purchasedItem.quality || '',
-          qualityNo: purchasedItem.qualityNo || '',
-          netKgr: purchasedItem.netKgr || '',
-          width: purchasedItem.width || '',
-          meters: parseFloat(purchasedItem.meters) || 0, 
-          price: parseFloat(purchasedItem.pricePerMeter) || 0, 
-          location: purchasedItem.location || 'Warehouse', 
-          dateAdded: purchasedItem.dateAdded || new Date().toISOString().split('T')[0] 
-        }); 
-      });
-      
-      for (const [code, newRolls] of Object.entries(rollsByFabric)) { 
-        const existingFabric = fabrics.find(f => String(f.mainCode) === String(code)); 
-        
-        if (existingFabric) { 
-          await updateDoc(doc(db, "fabrics", existingFabric.id), { rolls: [...(existingFabric.rolls || []), ...newRolls] }); 
-        } else { 
-          await addDoc(collection(db, "fabrics"), { mainCode: code, name: "New from Purchase", color: "Assorted", rolls: newRolls }); 
-        }
-      }
-    }
-    setShowAdd(false); setEditingId(null); setNewPurchase({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
-  };
-
-  const handleDelete = async (id) => { if(confirm("Delete this purchase?")) await deleteDoc(doc(db, "purchases", id)); }
-
-  return (
-    <div className="space-y-6">
-       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
-
-       <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-              <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
-              <div><h2 className="text-2xl font-bold text-slate-800">Purchases</h2><p className="text-slate-500">Track incoming stock and costs</p></div>
-          </div>
-          <div className="flex gap-2">
-             <button onClick={() => fileInputRef.current.click()} className="bg-blue-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2">
-                <Upload size={20}/> Import Excel
-             </button>
-             <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
-                <Plus size={20}/> New Purchase
-             </button>
-          </div>
-       </div>
-
-       {showAdd && (
-         <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
-             <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
-             
-             <div className="grid grid-cols-4 gap-6 mb-6">
-               <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option>Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
-               <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
-               <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.date} onChange={e => setNewPurchase({...newPurchase, date: e.target.value})} /></div>
-               <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
-             </div>
-
-             <div className="bg-emerald-50 p-4 rounded-xl mb-6">
-                <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Add Items / Rolls</h4>
-                
-                <div className="grid grid-cols-12 gap-3 mb-3">
-                   <div className="col-span-3">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Fabric Code</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" list="fabric-options-purchases" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Main Code"/>
-                      <datalist id="fabric-options-purchases">{fabrics.map(f => <option key={f.id} value={f.mainCode} />)}</datalist>
-                   </div>
-                   <div className="col-span-3">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Roll Code</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" placeholder="Roll Code" value={item.rollCode} onChange={e => setItem({...item, rollCode: e.target.value})} />
-                   </div>
-                   <div className="col-span-6">
-                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Description</label>
-                      <input className="w-full border p-2 rounded bg-white text-sm" placeholder="Description" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /> 
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-10 gap-3 mb-3">
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Design/Col</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.designCol} onChange={e => setItem({...item, designCol: e.target.value})} /></div>
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Color</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.rollColor} onChange={e => setItem({...item, rollColor: e.target.value})} /></div>
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Quality</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.quality} onChange={e => setItem({...item, quality: e.target.value})} /></div>
-                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Qual No</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.qualityNo} onChange={e => setItem({...item, qualityNo: e.target.value})} /></div>
-                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Net Kgr</label><input type="number" className="w-full border p-2 rounded bg-white text-sm" value={item.netKgr} onChange={e => setItem({...item, netKgr: e.target.value})} /></div>
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Width</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.width} onChange={e => setItem({...item, width: e.target.value})} /></div>
-                </div>
-
-                <div className="grid grid-cols-12 gap-3">
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Meters</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} /></div>
-                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Price/M (€)</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.pricePerMeter} onChange={e => setItem({...item, pricePerMeter: e.target.value})} /></div>
-                   <div className="col-span-8 flex items-end"><button onClick={addItem} className="w-full bg-emerald-600 text-white py-2 rounded font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">Add Item To List</button></div>
-                </div>
-
-                <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
-                   {newPurchase.items.length > 0 ? newPurchase.items.map((i, idx) => (
-                      <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm animate-in fade-in">
-                         <div>
-                            <p className="font-bold text-emerald-900">{i.fabricCode} <span className="text-slate-400">|</span> {i.subCode}</p>
-                            <p className="text-xs text-emerald-600">{i.location ? `[${i.location}] ` : ''}{i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.width && `• ${i.width}cm`}</p>
-                         </div>
-                         <div className="text-right">
-                            <p className="font-mono font-bold text-slate-700">{i.meters}m x €{i.pricePerMeter}</p>
-                            <p className="font-bold text-emerald-600">€{i.totalPrice.toFixed(2)}</p>
-                         </div>
-                         <button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600 ml-4"><Trash2 size={16}/></button>
-                      </div>
-                   )) : <div className="text-center py-4 text-emerald-400 italic text-sm">No items added yet. Use the form above or Import Excel.</div>}
-                </div>
-             </div>
-
-             <div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={savePurchase} className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-emerald-700">Save Purchase</button></div>
-         </div>
-       )}
-
-       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm text-left">
-             <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Supplier</th><th className="p-4">Date</th><th className="p-4 text-center">Items</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
-             <tbody className="divide-y divide-slate-100">
-                {(purchases||[]).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd).map(p => (
-                   <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td><td className="p-4 font-bold text-slate-800">{p.supplier}</td><td className="p-4 text-slate-500">{p.date}</td><td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{(p.items||[]).length}</span></td><td className="p-4 text-right font-bold text-slate-800">€{p.finalPrice.toFixed(2)}</td>
-                      <td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewInvoice(p)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => { setNewPurchase(p); setEditingId(p.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
-                   </tr>
-                ))}
-             </tbody>
-          </table>
-       </div>
-    </div>
-  )
 };
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
