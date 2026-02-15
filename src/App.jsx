@@ -755,7 +755,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     </div>
   );
 };
-// --- UPDATED SALES INVOICES (v5.10: Fixed Stock Deduction) ---
+// --- UPDATED SALES INVOICES (v5.45: Searchable Customer & Fabric Dropdowns) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -786,7 +786,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const addItem = () => { 
     if (item.rollId && item.meters && item.pricePerMeter) { 
         // Find the specific roll to get its details
-        const roll = selectedFabric?.rolls?.find(r => r.rollId == item.rollId); 
+        const roll = selectedFabric?.rolls?.find(r => String(r.rollId) === String(item.rollId)); 
         if (!roll) return; 
 
         const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); 
@@ -795,9 +795,9 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             ...newOrder, 
             items: [...(newOrder.items||[]), { 
                 ...item, 
-                subCode: roll.subCode, // Important: Save the Roll Code
+                subCode: roll.subCode, 
                 description: roll.description,
-                designCol: roll.designCol || '', // Capture new fields if available
+                designCol: roll.designCol || '', 
                 rollColor: roll.rollColor || '',
                 totalPrice: total 
             }] 
@@ -814,8 +814,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         if(fabric) { 
             // 2. Find the specific Roll inside that fabric and subtract meters
             const updatedRolls = fabric.rolls.map(r => { 
-                // Loose equality (==) in case rollId is string vs number
-                if(r.rollId == orderItem.rollId) { 
+                if(String(r.rollId) === String(orderItem.rollId)) { 
                     const currentMeters = parseFloat(r.meters || 0);
                     const soldMeters = parseFloat(orderItem.meters || 0);
                     const newMeters = Math.max(0, currentMeters - soldMeters);
@@ -836,16 +835,12 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; 
     
     if (editingId) { 
-        // Note: If editing, we usually don't re-deduct stock to avoid double counting
-        // unless status changes from Pending -> Completed.
-        // For simplicity in this version, we update the order record.
         const oldOrder = orders.find(o => o.id === editingId);
         if (oldOrder.status !== 'Completed' && newOrder.status === 'Completed') {
             await deductStock(newOrder.items);
         }
         await updateDoc(doc(db, "orders", editingId), orderToSave); 
     } else { 
-        // If creating NEW order and it is immediately Completed
         if (newOrder.status === 'Completed') {
             await deductStock(newOrder.items); 
         }
@@ -858,7 +853,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const updateStatus = async (id, newStatus) => { 
     const order = orders.find(o => o.id === id); 
-    // Only deduct if moving to Completed
     if (order.status !== 'Completed' && newStatus === 'Completed') {
         await deductStock(order.items); 
     }
@@ -887,7 +881,21 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           </div>
 
           <div className="grid grid-cols-5 gap-6 mb-8">
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Customer</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.customer} onChange={e => setNewOrder({ ...newOrder, customer: e.target.value })}><option>Select</option>{(customers || []).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+            {/* SEARCHABLE CUSTOMER DROPDOWN */}
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase">Customer</label>
+              <input 
+                className="w-full border p-3 rounded-lg bg-slate-50 mt-1" 
+                list="sales-customer-list" 
+                placeholder="Type to search..." 
+                value={newOrder.customer} 
+                onChange={e => setNewOrder({ ...newOrder, customer: e.target.value })} 
+              />
+              <datalist id="sales-customer-list">
+                {(customers || []).map(c => <option key={c.id} value={c.name} />)}
+              </datalist>
+            </div>
+            
             <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newOrder.vatRate} onChange={e => setNewOrder({ ...newOrder, vatRate: e.target.value })} /></div>
@@ -897,15 +905,22 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
             <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Select Stock to Sell</h4>
             <div className="flex gap-4 mb-4">
-              {/* 1. Select Fabric */}
+              
+              {/* SEARCHABLE FABRIC CODE DROPDOWN */}
               <div className="flex-1">
-                  <select className="w-full border p-3 rounded-lg bg-white" value={item.fabricCode} onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })}>
-                    <option value="">-- Select Fabric --</option>
-                    {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.mainCode} - {f.name}</option>)}
-                  </select>
+                  <input 
+                    className="w-full border p-3 rounded-lg bg-white" 
+                    list="sales-fabric-list" 
+                    placeholder="Type fabric code..." 
+                    value={item.fabricCode} 
+                    onChange={e => setItem({ ...item, fabricCode: e.target.value, rollId: '' })} 
+                  />
+                  <datalist id="sales-fabric-list">
+                    {fabrics.map(f => <option key={f.id} value={f.mainCode}>{f.name}</option>)}
+                  </datalist>
               </div>
 
-              {/* 2. Select Specific Roll (Enhanced Dropdown) */}
+              {/* Specific Roll Select (Requires Fabric to be chosen first) */}
               <div className="flex-1">
                   <select className="w-full border p-3 rounded-lg bg-white" disabled={!item.fabricCode} value={item.rollId} onChange={e => setItem({ ...item, rollId: e.target.value })}>
                     <option value="">-- Select Roll --</option>
@@ -962,7 +977,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 <td className="p-4 text-slate-500">{order.date}</td>
                 <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(order.finalPrice)||0).toFixed(2)}</td>
                 <td className="p-4 text-center">
-                    {/* Status Dropdown Logic */}
                     {order.status === 'Completed' ? (
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Completed</span>
                     ) : (
@@ -990,7 +1004,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
-
 // --- UPDATED PURCHASES COMPONENT (v5.44: Fixes Excel Serial Dates) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
