@@ -337,7 +337,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
   );
 };
 
-// --- MAIN DASHBOARD (v5.41: Restored Financials + Fixed Export) ---
+// --- MAIN DASHBOARD (v5.47: Added Total Rolls Metric) ---
 const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
   
   // 1. FILTER DATA BY DATE
@@ -345,9 +345,14 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const filteredOrders = (orders || []).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd);
   const filteredExpenses = (expenses || []).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd);
 
-  // 2. CALCULATE METRICS (RESTORED)
+  // 2. CALCULATE METRICS
   const totalStockMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
   
+  // NEW: Calculate Total Active Rolls (Only count rolls with > 0 meters)
+  const totalActiveRolls = (fabrics || []).reduce((sum, f) => {
+      return sum + (f.rolls || []).filter(r => (parseFloat(r.meters) || 0) > 0).length;
+  }, 0);
+
   const netPurchases = filteredPurchases.reduce((s, p) => s + (parseFloat(p.subtotal) || 0), 0);
   const netExpenses = filteredExpenses.reduce((s, e) => s + (parseFloat(e.amount || e.netPrice) || 0), 0);
   const totalRevenue = filteredOrders.reduce((s, o) => s + (parseFloat(o.subtotal) || 0), 0);
@@ -359,75 +364,55 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
 
-  // 3. FULL BACKUP EXPORT (v5.43: All 7 Sheets Restored)
+  // 3. EXPORT FUNCTION
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
       
-      // 1. INVENTORY (With Date & Locations)
+      // A. Inventory 
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
         "Date Added": r.dateAdded || '-',
-        "Fabric Code": f.mainCode, 
-        "Fabric Name": f.name, 
-        "Supplier": f.supplier || '-',
-        "Roll Code": r.subCode || '-', 
-        "Meters": parseFloat(r.meters || 0), 
-        "Width": r.width || '-', 
-        "Loc": r.location || '-', 
-        "Price": parseFloat(r.price || 0)
+        "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
+        "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
+        "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
 
-      // 2. SALES
+      // B. Sales 
       const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-        "Date": o.date, 
-        "Invoice": o.invoiceNo, 
-        "Customer": o.customer, 
-        "Fabric": i.fabricCode, 
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice
+        "Date": o.date, "Invoice": o.invoiceNo, "Customer": o.customer, 
+        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
-      // 3. PURCHASES
+      // C. Purchases
       const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
-        "Date": p.date, 
-        "Supplier": p.supplier, 
-        "Invoice": p.invoiceNo, 
-        "Fabric": i.fabricCode, 
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice 
+        "Date": p.date, "Supplier": p.supplier, "Invoice": p.invoiceNo, 
+        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice 
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
-      // 4. EXPENSES (With Smart Logic)
+      // E. Expenses (Deep Logic)
       const exp = (expenses || []).map(e => {
         const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
         const finalDesc = e.description || itemDesc || '-';
         let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
-        
-        // Sum items if main total is zero
         if (finalTotal === 0 && Array.isArray(e.items)) {
           finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
         }
-        
         const vat = parseFloat(e.vatAmount || e.vat || 0);
         let net = parseFloat(e.netAmount || e.net || 0);
-        // Calculate Net if missing
         if (net === 0 && finalTotal > 0) net = finalTotal - vat;
 
         return {
-          "Date": e.date || '-', 
-          "Company": e.entity || e.supplier || e.company || '-', 
-          "Description": finalDesc, 
-          "Net Value": parseFloat(net.toFixed(2)),
-          "VAT": parseFloat(vat.toFixed(2)), 
-          "Total": parseFloat(finalTotal.toFixed(2))
+          "Date": e.date || '-', "Company": e.entity || e.supplier || e.company || '-', 
+          "Description": finalDesc, "Net Value": parseFloat(net.toFixed(2)),
+          "VAT": parseFloat(vat.toFixed(2)), "Total": parseFloat(finalTotal.toFixed(2))
         };
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
-      // 5. SAMPLES (Restored!)
+      // Samples
       const sam = (samples || []).flatMap(s => (s.items || []).map(i => ({ 
         "Date": s.date, 
         "Customer": s.customer, 
@@ -438,19 +423,13 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
-      // 6. SUPPLIERS (Restored!)
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
-
-      // 7. CUSTOMERS (Restored!)
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
 
-      // Save File
       XLSX.writeFile(wb, `ElGrecoTex_Full_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
-    } catch (e) { 
-      console.error(e);
-      alert("Export failed: " + e.message); 
-    }
+    } catch (e) { alert("Export failed: " + e.message); }
   };
+
   return (
     <div className="space-y-8 animate-in fade-in">
       {/* HEADER */}
@@ -464,15 +443,19 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         </button>
       </div>
 
-      {/* METRIC CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* METRIC CARDS - NOW WITH 5 COLUMNS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" onClick={() => onNavigate('inventory')}/>
+        
+        {/* NEW: ACTIVE ROLLS CARD */}
+        <DashboardCard title="Active Rolls" value={totalActiveRolls} icon={Tag} color="purple" onClick={() => onNavigate('inventory')}/>
+        
         <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('sales')}/>
         <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('sales')}/>
         <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color={netProfit >= 0 ? "emerald" : "red"} onClick={() => onNavigate('dashboard')}/>
       </div>
 
-      {/* DETAILED MONEY FLOW (RESTORED) */}
+      {/* DETAILED MONEY FLOW */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-8 rounded-2xl border shadow-sm">
           <h3 className="font-bold text-slate-400 uppercase tracking-widest text-xs mb-6">Money Out (Expenses)</h3>
@@ -495,7 +478,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         </div>
       </div>
 
-      {/* QUICK ACTIONS BUTTONS (RESTORED) */}
+      {/* QUICK ACTIONS BUTTONS */}
       <div className="bg-white p-6 rounded-2xl border shadow-sm">
          <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
