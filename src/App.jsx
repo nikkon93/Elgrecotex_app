@@ -1052,6 +1052,277 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
+
+
+// --- UPDATED PURCHASES COMPONENT (v5.48: Crash-Proof + Excel Import) ---
+const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [viewInvoice, setViewInvoice] = useState(null);
+  const [newPurchase, setNewPurchase] = useState({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
+  
+  const [item, setItem] = useState({ 
+    fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' 
+  });
+
+  const fileInputRef = React.useRef(null);
+
+  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
+
+  // --- EXCEL IMPORT LOGIC ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        const importedItems = data.map(row => {
+            const getVal = (key) => {
+                const val = row[key] || row[key.toLowerCase()] || row[key.toUpperCase()];
+                return val === undefined || val === null ? '' : val;
+            };
+            
+            let rawCode = getVal('FABRIC') || getVal('Fabric Code') || getVal('Main Code');
+            const safeFabricCode = rawCode ? String(rawCode).trim() : 'UNKNOWN';
+
+            let rawRoll = getVal('ROLLCODE') || getVal('Roll Code') || getVal('Sub Code');
+            const safeRollCode = rawRoll ? String(rawRoll).trim() : 'NEW';
+
+            const meters = parseFloat(getVal('METERS') || getVal('Meters') || getVal('Qty') || 0);
+            const price = parseFloat(getVal('PRICE') || getVal('Price') || 0);
+            
+            let rawDate = getVal('DATE') || getVal('Date');
+            let finalDate = new Date().toISOString().split('T')[0]; 
+            
+            if (rawDate) {
+                if (typeof rawDate === 'number') {
+                    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                    excelEpoch.setUTCDate(excelEpoch.getUTCDate() + rawDate);
+                    finalDate = excelEpoch.toISOString().split('T')[0];
+                } else {
+                    finalDate = String(rawDate).trim();
+                    if (finalDate.includes('/')) {
+                        const parts = finalDate.split('/');
+                        if(parts.length === 3 && parts[2].length === 4) {
+                            finalDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        }
+                    }
+                }
+            }
+
+            return {
+                fabricCode: safeFabricCode,
+                subCode: safeRollCode, 
+                description: String(getVal('DESCRIPTION') || getVal('Description') || ''),
+                designCol: String(getVal('DESIGN') || getVal('Design') || ''),
+                rollColor: String(getVal('COLOR') || getVal('Color') || ''),
+                quality: String(getVal('QUALITY') || getVal('Quality') || ''),
+                qualityNo: String(getVal('Quality No') || ''),
+                netKgr: String(getVal('Kgr') || ''),
+                width: String(getVal('WIDTH') || getVal('Width') || ''),
+                location: String(getVal('LOC') || getVal('Location') || 'Warehouse'),
+                dateAdded: finalDate, 
+                meters: meters,
+                pricePerMeter: price,
+                totalPrice: meters * price
+            };
+        }).filter(i => i.meters > 0);
+
+        if(importedItems.length > 0) {
+            setNewPurchase(prev => ({ ...prev, items: [...(prev.items || []), ...importedItems] }));
+            setShowAdd(true);
+            alert(`Successfully imported ${importedItems.length} items!`);
+        } else {
+            alert("No valid items found. Please check Excel headers.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error reading file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null; 
+  };
+
+  const addItem = () => { 
+    if(item.fabricCode && item.meters && item.pricePerMeter) { 
+      const total = parseFloat(item.meters) * parseFloat(item.pricePerMeter); 
+      setNewPurchase({
+        ...newPurchase, 
+        items: [...(newPurchase.items || []), { ...item, subCode: item.rollCode, totalPrice: total }] 
+      }); 
+      setItem({ fabricCode: '', rollCode: '', description: '', designCol: '', rollColor: '', quality: '', qualityNo: '', netKgr: '', width: '', meters: '', pricePerMeter: '' }); 
+    }
+  };
+
+  const savePurchase = async () => {
+    const subtotal = (newPurchase.items || []).reduce((s, i) => s + (parseFloat(i.totalPrice) || 0), 0);
+    const vatRate = parseFloat(newPurchase.vatRate) || 0;
+    const vat = subtotal * (vatRate / 100);
+    const final = subtotal + vat;
+    
+    const finalItems = (newPurchase.items || []).map(i => ({
+        ...i, 
+        meters: parseFloat(i.meters) || 0, 
+        pricePerMeter: parseFloat(i.pricePerMeter) || 0, 
+        totalPrice: parseFloat(i.totalPrice) || 0
+    }));
+
+    const purchaseData = { ...newPurchase, subtotal, vatAmount: vat, finalPrice: final, items: finalItems };
+    
+    if(editingId) { 
+      await updateDoc(doc(db, "purchases", editingId), purchaseData); 
+    } else { 
+      await addDoc(collection(db, "purchases"), purchaseData);
+      
+      const rollsByFabric = {};
+      finalItems.forEach(purchasedItem => { 
+        const code = purchasedItem.fabricCode; 
+        if (!rollsByFabric[code]) rollsByFabric[code] = []; 
+        rollsByFabric[code].push({ 
+          rollId: Date.now() + Math.random(), 
+          subCode: purchasedItem.subCode || 'NEW', 
+          description: purchasedItem.description || '', 
+          designCol: purchasedItem.designCol || '',
+          rollColor: purchasedItem.rollColor || '',
+          quality: purchasedItem.quality || '',
+          qualityNo: purchasedItem.qualityNo || '',
+          netKgr: purchasedItem.netKgr || '',
+          width: purchasedItem.width || '',
+          meters: parseFloat(purchasedItem.meters) || 0, 
+          price: parseFloat(purchasedItem.pricePerMeter) || 0, 
+          location: purchasedItem.location || 'Warehouse', 
+          dateAdded: purchasedItem.dateAdded || new Date().toISOString().split('T')[0] 
+        }); 
+      });
+      
+      for (const [code, newRolls] of Object.entries(rollsByFabric)) { 
+        const existingFabric = (fabrics || []).find(f => String(f.mainCode) === String(code)); 
+        
+        if (existingFabric) { 
+          await updateDoc(doc(db, "fabrics", existingFabric.id), { rolls: [...(existingFabric.rolls || []), ...newRolls] }); 
+        } else { 
+          await addDoc(collection(db, "fabrics"), { mainCode: code, name: "New from Purchase", color: "Assorted", rolls: newRolls }); 
+        }
+      }
+    }
+    setShowAdd(false); setEditingId(null); setNewPurchase({ supplier: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
+  };
+
+  const handleDelete = async (id) => { if(confirm("Delete this purchase?")) await deleteDoc(doc(db, "purchases", id)); }
+
+  return (
+    <div className="space-y-6">
+       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
+
+       <div className="flex justify-between items-center">
+          <div className="flex items-center gap-4">
+              <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+              <div><h2 className="text-2xl font-bold text-slate-800">Purchases</h2><p className="text-slate-500">Track incoming stock and costs</p></div>
+          </div>
+          <div className="flex gap-2">
+             <button onClick={() => fileInputRef.current.click()} className="bg-blue-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2">
+                <Upload size={20}/> Import Excel
+             </button>
+             <button onClick={() => setShowAdd(true)} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center gap-2">
+                <Plus size={20}/> New Purchase
+             </button>
+          </div>
+       </div>
+
+       {showAdd && (
+         <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
+             <h3 className="font-bold text-lg mb-6 text-slate-800">{editingId ? 'Edit Purchase' : 'New Purchase Invoice'}</h3>
+             
+             <div className="grid grid-cols-4 gap-6 mb-6">
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Supplier</label><select className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.supplier || ''} onChange={e => setNewPurchase({...newPurchase, supplier: e.target.value})}><option value="">Select</option>{(suppliers || []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.invoiceNo || ''} onChange={e => setNewPurchase({...newPurchase, invoiceNo: e.target.value})} /></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.date || ''} onChange={e => setNewPurchase({...newPurchase, date: e.target.value})} /></div>
+               <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newPurchase.vatRate || 0} onChange={e => setNewPurchase({...newPurchase, vatRate: e.target.value})} /></div>
+             </div>
+
+             <div className="bg-emerald-50 p-4 rounded-xl mb-6">
+                <h4 className="font-bold text-emerald-800 mb-4 text-sm uppercase">Add Items / Rolls</h4>
+                
+                <div className="grid grid-cols-12 gap-3 mb-3">
+                   <div className="col-span-3">
+                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Fabric Code</label>
+                      <input className="w-full border p-2 rounded bg-white text-sm" list="fabric-options-purchases" value={item.fabricCode || ''} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Main Code"/>
+                      <datalist id="fabric-options-purchases">{(fabrics || []).map(f => <option key={f.id} value={f.mainCode} />)}</datalist>
+                   </div>
+                   <div className="col-span-3">
+                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Roll Code</label>
+                      <input className="w-full border p-2 rounded bg-white text-sm" placeholder="Roll Code" value={item.rollCode || ''} onChange={e => setItem({...item, rollCode: e.target.value})} />
+                   </div>
+                   <div className="col-span-6">
+                      <label className="text-[10px] font-bold text-emerald-700 uppercase">Description</label>
+                      <input className="w-full border p-2 rounded bg-white text-sm" placeholder="Description" value={item.description || ''} onChange={e => setItem({...item, description: e.target.value})} /> 
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-10 gap-3 mb-3">
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Design/Col</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.designCol || ''} onChange={e => setItem({...item, designCol: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Color</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.rollColor || ''} onChange={e => setItem({...item, rollColor: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Quality</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.quality || ''} onChange={e => setItem({...item, quality: e.target.value})} /></div>
+                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Qual No</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.qualityNo || ''} onChange={e => setItem({...item, qualityNo: e.target.value})} /></div>
+                   <div className="col-span-1"><label className="text-[10px] font-bold text-emerald-700 uppercase">Net Kgr</label><input type="number" className="w-full border p-2 rounded bg-white text-sm" value={item.netKgr || ''} onChange={e => setItem({...item, netKgr: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Width</label><input className="w-full border p-2 rounded bg-white text-sm" value={item.width || ''} onChange={e => setItem({...item, width: e.target.value})} /></div>
+                </div>
+
+                <div className="grid grid-cols-12 gap-3">
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Meters</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.meters || ''} onChange={e => setItem({...item, meters: e.target.value})} /></div>
+                   <div className="col-span-2"><label className="text-[10px] font-bold text-emerald-700 uppercase">Price/M (€)</label><input type="number" className="w-full border p-2 rounded bg-white text-sm font-bold" placeholder="0.00" value={item.pricePerMeter || ''} onChange={e => setItem({...item, pricePerMeter: e.target.value})} /></div>
+                   <div className="col-span-8 flex items-end"><button onClick={addItem} className="w-full bg-emerald-600 text-white py-2 rounded font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-colors">Add Item To List</button></div>
+                </div>
+
+                <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                   {(newPurchase.items || []).length > 0 ? (newPurchase.items || []).map((i, idx) => (
+                      <div key={idx} className="bg-white p-3 rounded border border-emerald-100 flex justify-between items-center text-sm shadow-sm animate-in fade-in">
+                         <div>
+                            <p className="font-bold text-emerald-900">{i.fabricCode} <span className="text-slate-400">|</span> {i.subCode}</p>
+                            <p className="text-xs text-emerald-600">{i.location ? `[${i.location}] ` : ''}{i.designCol} {i.rollColor && `• ${i.rollColor}`} {i.width && `• ${i.width}cm`}</p>
+                         </div>
+                         <div className="text-right">
+                            <p className="font-mono font-bold text-slate-700">{(parseFloat(i.meters)||0).toFixed(2)}m x €{(parseFloat(i.pricePerMeter)||0).toFixed(2)}</p>
+                            <p className="font-bold text-emerald-600">€{(parseFloat(i.totalPrice)||0).toFixed(2)}</p>
+                         </div>
+                         <button onClick={() => setNewPurchase({...newPurchase, items: newPurchase.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600 ml-4"><Trash2 size={16}/></button>
+                      </div>
+                   )) : <div className="text-center py-4 text-emerald-400 italic text-sm">No items added yet. Use the form above or Import Excel.</div>}
+                </div>
+             </div>
+
+             <div className="flex justify-end gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={savePurchase} className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-emerald-700">Save Purchase</button></div>
+         </div>
+       )}
+
+       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+          <table className="w-full text-sm text-left">
+             <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Supplier</th><th className="p-4">Date</th><th className="p-4 text-center">Items</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
+             <tbody className="divide-y divide-slate-100">
+                {(purchases||[]).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd).map(p => (
+                   <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td>
+                      <td className="p-4 font-bold text-slate-800">{p.supplier || '-'}</td>
+                      <td className="p-4 text-slate-500">{p.date || '-'}</td>
+                      <td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{(p.items||[]).length}</span></td>
+                      <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(p.finalPrice)||0).toFixed(2)}</td>
+                      <td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewInvoice(p)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => { setNewPurchase(p); setEditingId(p.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
+                   </tr>
+                ))}
+             </tbody>
+          </table>
+       </div>
+    </div>
+  )
+};
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
