@@ -805,7 +805,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.46: Searchable Combo Boxes) ---
+// --- UPDATED SALES INVOICES (v5.49: Fixed Stock Deduction Logic) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -857,11 +857,20 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     }
   };
 
+  // --- CRITICAL FIX: BATCH INVENTORY DEDUCTION ---
   const deductStock = async (orderItems) => { 
+    // 1. Create a safe local copy of all inventory so we don't use "stale" data during the loop
+    let localFabrics = JSON.parse(JSON.stringify(fabrics));
+    let modifiedFabricIds = new Set(); // Keep track of which fabrics need updating
+
+    // 2. Apply all invoice items to our local copy first
     for (const orderItem of orderItems) { 
-        const fabric = fabrics.find(f => String(f.mainCode) === String(orderItem.fabricCode)); 
-        if(fabric) { 
-            const updatedRolls = fabric.rolls.map(r => { 
+        const fabricIndex = localFabrics.findIndex(f => String(f.mainCode) === String(orderItem.fabricCode)); 
+        
+        if(fabricIndex !== -1) { 
+            const fabric = localFabrics[fabricIndex];
+            
+            fabric.rolls = fabric.rolls.map(r => { 
                 if(String(r.rollId) === String(orderItem.rollId)) { 
                     const currentMeters = parseFloat(r.meters || 0);
                     const soldMeters = parseFloat(orderItem.meters || 0);
@@ -870,8 +879,15 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 } 
                 return r; 
             }); 
-            await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls }); 
+            
+            modifiedFabricIds.add(fabric.id); // Mark this fabric to be saved
         }
+    }
+
+    // 3. Save the fully updated fabrics to the database (prevents overwriting previous loops)
+    for (const fabricId of modifiedFabricIds) {
+        const fabricToUpdate = localFabrics.find(f => f.id === fabricId);
+        await updateDoc(doc(db, "fabrics", fabricId), { rolls: fabricToUpdate.rolls });
     }
   };
 
@@ -934,7 +950,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           </div>
 
           <div className="grid grid-cols-5 gap-6 mb-8 items-end">
-            {/* NEW: Custom Searchable Customer Dropdown */}
             <div className="col-span-2">
               <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Customer</label>
               <SearchableSelect 
@@ -954,7 +969,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Select Stock to Sell</h4>
             <div className="flex gap-4 mb-4 items-end">
               
-              {/* NEW: Custom Searchable Fabric Dropdown */}
               <div className="flex-1">
                   <label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Fabric Code</label>
                   <SearchableSelect 
@@ -965,7 +979,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                   />
               </div>
 
-              {/* NEW: Custom Searchable Roll Dropdown */}
               <div className="flex-1">
                   <label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Roll ID</label>
                   <SearchableSelect 
@@ -985,7 +998,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
               <button onClick={addItem} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 h-[50px]">Add</button>
             </div>
 
-            {/* List Items */}
             {(newOrder.items||[]).length > 0 && (
                 <div className="bg-white rounded-lg border overflow-hidden mt-6">
                     <table className="w-full text-sm">
@@ -1052,8 +1064,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
-
-
 // --- UPDATED PURCHASES COMPONENT (v5.48: Crash-Proof + Excel Import) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
