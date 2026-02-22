@@ -510,7 +510,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.42: Restored Blue Roll Breakdown) ---
+// --- 5. INVENTORY TAB (v5.50: Added Bulk Export for Sales) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -526,6 +526,28 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   });
 
   const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  // --- NEW: EXPORT INVENTORY FOR BULK SALES ---
+  const handleExportInventory = () => {
+    try {
+      const exportData = fabrics.flatMap(f => (f.rolls || []).map(r => ({
+        "Fabric Code": f.mainCode,
+        "Fabric Name": f.name,
+        "Roll Code": r.subCode || '-',
+        "Roll ID": r.rollId || '-',
+        "Description": r.description || '-',
+        "Price": parseFloat(r.price || f.salePrice || 0),
+        "Meters": parseFloat(r.meters || 0)
+      })));
+      
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Inventory_For_Sale");
+      XLSX.writeFile(wb, `Bulk_Sale_Template_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+      alert("Failed to export inventory: " + error.message);
+    }
+  };
 
   const handleAddFabric = async () => {
     if (newFabricData.mainCode && newFabricData.name) {
@@ -602,7 +624,13 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
             <Search className="text-slate-400" size={20}/>
             <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search by Code, ID, Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
-          <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
+          <div className="flex gap-2">
+            {/* EXPORT BUTTON */}
+            <button onClick={handleExportInventory} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 hover:bg-blue-700 transition-colors">
+               <FileSpreadsheet size={18}/> Export for Sales
+            </button>
+            <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
+          </div>
       </div>
 
       {showAddFabric && (
@@ -653,7 +681,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
           const rolls = rawRolls.filter(r => r && typeof r === 'object');
           const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
 
-          // --- LOGIC RESTORED: GROUP ROLLS BY SUBCODE ---
           const rollSummary = rolls.reduce((acc, r) => {
              const code = r.subCode || 'No Code';
              acc[code] = (acc[code] || 0) + (parseFloat(r.meters) || 0);
@@ -670,7 +697,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                   <h3 className="font-bold text-lg text-slate-800"><HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - {fabric?.name}</h3>
                   <p className="text-sm text-slate-500">{totalMeters.toFixed(2)}m Total • {rolls.length} rolls • <span className="text-blue-500 font-bold">{fabric.supplier}</span></p>
                   
-                  {/* --- VISUAL RESTORED: BLUE BOLD ROLL BREAKDOWN --- */}
                   {breakdownString && (
                     <p className="text-xs font-bold text-blue-600 mt-1 uppercase tracking-wide">{breakdownString}</p>
                   )}
@@ -805,7 +831,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.49: Fixed Stock Deduction Logic) ---
+// --- UPDATED SALES INVOICES (v5.50: Bulk Excel Import Added) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -814,23 +840,73 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
   
-  // Helper to find the currently selected fabric to show its rolls
   const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
+  const fileInputRef = React.useRef(null); // Reference for Excel Import
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
 
   const handleNewInvoice = () => { 
       setNewOrder({ 
-          customer: '', 
-          invoiceNo: '', 
-          orderId: generateOrderId(), 
-          date: new Date().toISOString().split('T')[0], 
-          vatRate: 24, 
-          status: 'Pending', 
-          items: [] 
+          customer: '', invoiceNo: '', orderId: generateOrderId(), 
+          date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] 
       }); 
       setEditingId(null); 
       setShowAdd(true); 
+  };
+
+  // --- NEW: BULK SALES IMPORT LOGIC ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        const importedItems = data.map(row => {
+          const getVal = (key) => row[key] || row[key.toLowerCase()] || row[key.toUpperCase()];
+          
+          const rollId = String(getVal('Roll ID') || getVal('ROLL ID') || '');
+          const fabricCode = String(getVal('Fabric Code') || getVal('FABRIC CODE') || getVal('Fabric') || '');
+          
+          // User edits the exported "Meters" column to be the SOLD amount
+          const meters = parseFloat(getVal('Meters') || getVal('METERS') || getVal('Qty') || 0);
+          const price = parseFloat(getVal('Price') || getVal('PRICE') || 0);
+
+          // We fetch the DB roll directly using the Roll ID to ensure 100% accuracy
+          const dbFabric = fabrics.find(f => String(f.mainCode) === fabricCode);
+          const dbRoll = dbFabric?.rolls?.find(r => String(r.rollId) === rollId);
+
+          return {
+            fabricCode: fabricCode,
+            rollId: rollId,
+            subCode: dbRoll ? dbRoll.subCode : String(getVal('Roll Code') || '-'),
+            description: dbRoll ? dbRoll.description : String(getVal('Description') || '-'),
+            designCol: dbRoll?.designCol || '',
+            rollColor: dbRoll?.rollColor || '',
+            meters: meters,
+            pricePerMeter: price,
+            totalPrice: meters * price
+          };
+        }).filter(i => i.meters > 0 && i.rollId); // Only import rows that have > 0 meters and an ID
+
+        if (importedItems.length > 0) {
+          setNewOrder(prev => ({ ...prev, items: [...(prev.items || []), ...importedItems] }));
+          alert(`Successfully imported ${importedItems.length} items to the invoice!`);
+        } else {
+          alert("No valid items found. Ensure 'Roll ID' and 'Meters' columns are filled.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error parsing Excel file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null; 
   };
 
   const addItem = () => { 
@@ -843,12 +919,8 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         setNewOrder({ 
             ...newOrder, 
             items: [...(newOrder.items||[]), { 
-                ...item, 
-                subCode: roll.subCode, 
-                description: roll.description,
-                designCol: roll.designCol || '', 
-                rollColor: roll.rollColor || '',
-                totalPrice: total 
+                ...item, subCode: roll.subCode, description: roll.description,
+                designCol: roll.designCol || '', rollColor: roll.rollColor || '', totalPrice: total 
             }] 
         }); 
         setItem({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' }); 
@@ -857,13 +929,10 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     }
   };
 
-  // --- CRITICAL FIX: BATCH INVENTORY DEDUCTION ---
   const deductStock = async (orderItems) => { 
-    // 1. Create a safe local copy of all inventory so we don't use "stale" data during the loop
     let localFabrics = JSON.parse(JSON.stringify(fabrics));
-    let modifiedFabricIds = new Set(); // Keep track of which fabrics need updating
+    let modifiedFabricIds = new Set(); 
 
-    // 2. Apply all invoice items to our local copy first
     for (const orderItem of orderItems) { 
         const fabricIndex = localFabrics.findIndex(f => String(f.mainCode) === String(orderItem.fabricCode)); 
         
@@ -880,11 +949,10 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 return r; 
             }); 
             
-            modifiedFabricIds.add(fabric.id); // Mark this fabric to be saved
+            modifiedFabricIds.add(fabric.id); 
         }
     }
 
-    // 3. Save the fully updated fabrics to the database (prevents overwriting previous loops)
     for (const fabricId of modifiedFabricIds) {
         const fabricToUpdate = localFabrics.find(f => f.id === fabricId);
         await updateDoc(doc(db, "fabrics", fabricId), { rolls: fabricToUpdate.rolls });
@@ -928,6 +996,9 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   return (
     <div className="space-y-6">
+      {/* Hidden File Input for Bulk Sales */}
+      <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
+
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
             <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
@@ -956,19 +1027,25 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 options={(customers || []).map(c => ({ value: c.name, label: c.name }))}
                 value={newOrder.customer}
                 onChange={(val) => setNewOrder({ ...newOrder, customer: val })}
-                placeholder="Search or Select Customer..."
+                placeholder="Search Customer..."
               />
             </div>
-            
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Invoice #</label><input className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Date</label><input type="date" className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Status</label><select className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white font-bold text-blue-800" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
           </div>
           
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
-            <h4 className="font-bold text-blue-800 mb-4 text-sm uppercase">Select Stock to Sell</h4>
+            <div className="flex justify-between items-center mb-4">
+               <h4 className="font-bold text-blue-800 text-sm uppercase">Select Stock to Sell</h4>
+               
+               {/* BULK IMPORT BUTTON INSIDE SALES MODAL */}
+               <button onClick={() => fileInputRef.current.click()} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm hover:bg-emerald-700 transition-colors">
+                  <Upload size={16}/> Import from Excel
+               </button>
+            </div>
+            
             <div className="flex gap-4 mb-4 items-end">
-              
               <div className="flex-1">
                   <label className="text-[10px] font-bold text-blue-400 uppercase mb-1 block">Fabric Code</label>
                   <SearchableSelect 
