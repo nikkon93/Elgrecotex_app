@@ -1514,10 +1514,35 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   )
 };
 
+// --- UPDATED CONTACT LIST (v5.51: Searchable Customers & Suppliers) ---
 const ContactList = ({ title, data, collectionName, onBack }) => {
-   const [showAdd, setShowAdd] = useState(false); const [editingId, setEditingId] = useState(null); const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
-   const handleSave = async () => { if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } else { await addDoc(collection(db, collectionName), newContact); } setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); };
+   const [showAdd, setShowAdd] = useState(false); 
+   const [editingId, setEditingId] = useState(null); 
+   const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
+   
+   // NEW: Search state
+   const [searchTerm, setSearchTerm] = useState('');
+
+   const handleSave = async () => { 
+       if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } 
+       else { await addDoc(collection(db, collectionName), newContact); } 
+       setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); 
+   };
+   
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
+
+   // NEW: Filter logic (Searches by Name, VAT, Contact Person, or Phone)
+   const filteredData = (data || []).filter(d => {
+       const s = searchTerm.toLowerCase().trim();
+       if (!s) return true;
+       return (
+           String(d.name || '').toLowerCase().includes(s) ||
+           String(d.vatNumber || '').toLowerCase().includes(s) ||
+           String(d.contact || '').toLowerCase().includes(s) ||
+           String(d.phone || '').toLowerCase().includes(s)
+       );
+   });
+
    return (
       <div className="space-y-6">
          <div className="flex justify-between items-center">
@@ -1527,9 +1552,70 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
             </div>
             <button onClick={() => setShowAdd(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-black shadow-lg flex items-center gap-2"><Plus size={20}/> Add {title}</button>
          </div>
-         {showAdd && (<div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100"><h3 className="font-bold text-lg mb-6">{editingId ? `Edit` : `Add`} {title}</h3><div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"><input className="border p-3 rounded-lg bg-slate-50" placeholder="Company Name" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="VAT Number" value={newContact.vatNumber} onChange={e => setNewContact({...newContact, vatNumber: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Contact Person" value={newContact.contact} onChange={e => setNewContact({...newContact, contact: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Email" value={newContact.email} onChange={e => setNewContact({...newContact, email: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Phone" value={newContact.phone} onChange={e => setNewContact({...newContact, phone: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="Address" value={newContact.address} onChange={e => setNewContact({...newContact, address: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="City" value={newContact.city} onChange={e => setNewContact({...newContact, city: e.target.value})} /><input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban} onChange={e => setNewContact({...newContact, iban: e.target.value})} /></div><div className="flex justify-end gap-3"><button onClick={() => { setShowAdd(false); setEditingId(null); }} className="px-6 py-3 rounded-lg font-bold text-slate-500">Cancel</button><button onClick={handleSave} className="bg-slate-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg">Save</button></div></div>)}
-         {/* FIXED: BLANK SCREEN (|| []) */}
-         <div className="bg-white border rounded-xl shadow-sm overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Company</th><th className="p-4">Contact</th><th className="p-4">Details</th><th className="p-4 text-right pr-6">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{(data||[]).map(d => (<tr key={d.id} className="hover:bg-slate-50"><td className="p-4 pl-6"><p className="font-bold text-slate-800">{d.name}</p><p className="text-xs text-slate-400">{d.vatNumber}</p></td><td className="p-4"><p className="text-slate-700">{d.contact}</p><p className="text-xs text-slate-400">{d.phone}</p></td><td className="p-4 text-slate-500 text-xs">{d.address} {d.city} {d.iban}</td><td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => { setNewContact(d); setEditingId(d.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(d.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td></tr>))}</tbody></table></div>
+
+         {/* NEW: Search Bar UI */}
+         {!showAdd && (
+             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4 transition-all">
+                <Search className="text-slate-400" size={20}/>
+                <input 
+                   className="w-full bg-transparent outline-none font-medium text-slate-700" 
+                   placeholder={`Search ${title} by Name, VAT, Contact, or Phone...`} 
+                   value={searchTerm} 
+                   onChange={e => setSearchTerm(e.target.value)} 
+                />
+             </div>
+         )}
+
+         {showAdd && (
+             <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 animate-in fade-in">
+                 <h3 className="font-bold text-lg mb-6">{editingId ? `Edit` : `Add`} {title}</h3>
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Company Name" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="VAT Number" value={newContact.vatNumber} onChange={e => setNewContact({...newContact, vatNumber: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Contact Person" value={newContact.contact} onChange={e => setNewContact({...newContact, contact: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Email" value={newContact.email} onChange={e => setNewContact({...newContact, email: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Phone" value={newContact.phone} onChange={e => setNewContact({...newContact, phone: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Address" value={newContact.address} onChange={e => setNewContact({...newContact, address: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="City" value={newContact.city} onChange={e => setNewContact({...newContact, city: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban} onChange={e => setNewContact({...newContact, iban: e.target.value})} />
+                 </div>
+                 <div className="flex justify-end gap-3">
+                     <button onClick={() => { setShowAdd(false); setEditingId(null); }} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                     <button onClick={handleSave} className="bg-slate-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-black">Save</button>
+                 </div>
+             </div>
+         )}
+         
+         <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+             <table className="w-full text-sm text-left">
+                 <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
+                     <tr><th className="p-4 pl-6">Company</th><th className="p-4">Contact</th><th className="p-4">Details</th><th className="p-4 text-right pr-6">Action</th></tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                     {/* FIX: Now maps over filteredData instead of all data */}
+                     {filteredData.map(d => (
+                         <tr key={d.id} className="hover:bg-slate-50 transition-colors">
+                             <td className="p-4 pl-6">
+                                 <p className="font-bold text-slate-800">{d.name}</p>
+                                 <p className="text-xs text-slate-400">{d.vatNumber}</p>
+                             </td>
+                             <td className="p-4">
+                                 <p className="text-slate-700">{d.contact}</p>
+                                 <p className="text-xs text-slate-400">{d.phone}</p>
+                             </td>
+                             <td className="p-4 text-slate-500 text-xs">{d.address} {d.city} {d.iban}</td>
+                             <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                                 <button onClick={() => { setNewContact(d); setEditingId(d.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
+                                 <button onClick={() => handleDelete(d.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
+                             </td>
+                         </tr>
+                     ))}
+                     {filteredData.length === 0 && (
+                         <tr><td colSpan="4" className="p-8 text-center text-slate-400 italic">No contacts found.</td></tr>
+                     )}
+                 </tbody>
+             </table>
+         </div>
       </div>
    );
 };
