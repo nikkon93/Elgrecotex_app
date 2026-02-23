@@ -510,7 +510,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.50: Added Bulk Export for Sales) ---
+// --- 5. INVENTORY TAB (v5.52: Added Clean Empty Rolls) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -527,7 +527,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 
   const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  // --- NEW: EXPORT INVENTORY FOR BULK SALES ---
   const handleExportInventory = () => {
     try {
       const exportData = fabrics.flatMap(f => (f.rolls || []).map(r => ({
@@ -546,6 +545,32 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
       XLSX.writeFile(wb, `Bulk_Sale_Template_${new Date().toISOString().split('T')[0]}.xlsx`);
     } catch (error) {
       alert("Failed to export inventory: " + error.message);
+    }
+  };
+
+  // --- NEW: CLEAN EMPTY ROLLS LOGIC ---
+  const handleCleanEmptyRolls = async () => {
+    if (!window.confirm("Are you sure you want to delete all empty rolls (0 meters)? This cannot be undone.")) return;
+
+    try {
+      let deletedCount = 0;
+
+      for (const fabric of fabrics) {
+        const originalRollCount = (fabric.rolls || []).length;
+        
+        // Filter out any rolls that have 0 or less meters
+        const keptRolls = (fabric.rolls || []).filter(r => parseFloat(r.meters || 0) > 0);
+
+        if (keptRolls.length !== originalRollCount) {
+          deletedCount += (originalRollCount - keptRolls.length);
+          await updateDoc(doc(db, "fabrics", fabric.id), { rolls: keptRolls });
+        }
+      }
+
+      alert(`Database Cleaned! Successfully removed ${deletedCount} empty rolls.`);
+    } catch (error) {
+      console.error("Error cleaning rolls:", error);
+      alert("Failed to clean empty rolls.");
     }
   };
 
@@ -625,7 +650,10 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
             <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search by Code, ID, Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
           <div className="flex gap-2">
-            {/* EXPORT BUTTON */}
+            {/* NEW CLEAN BUTTON */}
+            <button onClick={handleCleanEmptyRolls} className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-red-100 transition-colors border border-red-200" title="Delete all 0-meter rolls">
+               <Trash2 size={18}/> Clean Empty
+            </button>
             <button onClick={handleExportInventory} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 hover:bg-blue-700 transition-colors">
                <FileSpreadsheet size={18}/> Export for Sales
             </button>
