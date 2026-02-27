@@ -510,7 +510,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.52: Added Clean Empty Rolls) ---
+// --- 5. INVENTORY TAB (v5.54: Added 'Fix Old IDs' utility) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -525,7 +525,8 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     meters: '', location: '', price: '', image: '', dateAdded: '' 
   });
 
-  const generateRollId = () => `EG-${Math.floor(1000 + Math.random() * 9000)}`;
+  // Clean 8-digit number generator
+  const generateRollId = () => String(Math.floor(10000000 + Math.random() * 90000000));
 
   const handleExportInventory = () => {
     try {
@@ -548,7 +549,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     }
   };
 
-  // --- NEW: CLEAN EMPTY ROLLS LOGIC ---
   const handleCleanEmptyRolls = async () => {
     if (!window.confirm("Are you sure you want to delete all empty rolls (0 meters)? This cannot be undone.")) return;
 
@@ -557,8 +557,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 
       for (const fabric of fabrics) {
         const originalRollCount = (fabric.rolls || []).length;
-        
-        // Filter out any rolls that have 0 or less meters
         const keptRolls = (fabric.rolls || []).filter(r => parseFloat(r.meters || 0) > 0);
 
         if (keptRolls.length !== originalRollCount) {
@@ -571,6 +569,39 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     } catch (error) {
       console.error("Error cleaning rolls:", error);
       alert("Failed to clean empty rolls.");
+    }
+  };
+
+  // --- NEW: FIX OLD IDs LOGIC ---
+  const handleFixOldIds = async () => {
+    if (!window.confirm("Convert all old 13-digit Roll IDs to the new 8-digit format? (Only do this if you haven't printed stickers yet!)")) return;
+
+    try {
+      let updatedRollsCount = 0;
+
+      for (const fabric of fabrics) {
+        let needsUpdate = false;
+        
+        const updatedRolls = (fabric.rolls || []).map(r => {
+          const currentId = String(r.rollId || '');
+          // If the ID is longer than 8 characters, or has a decimal/letter, replace it
+          if (currentId.length > 8 || currentId.includes('.') || currentId.includes('e') || currentId.includes('EG-')) {
+            needsUpdate = true;
+            updatedRollsCount++;
+            return { ...r, rollId: generateRollId() };
+          }
+          return r;
+        });
+
+        if (needsUpdate) {
+          await updateDoc(doc(db, "fabrics", fabric.id), { rolls: updatedRolls });
+        }
+      }
+
+      alert(`Success! Updated ${updatedRollsCount} old rolls to the new 8-digit ID format.`);
+    } catch (error) {
+      console.error("Error updating IDs:", error);
+      alert("Failed to update Roll IDs.");
     }
   };
 
@@ -650,13 +681,21 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
             <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search by Code, ID, Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
           <div className="flex gap-2">
-            {/* NEW CLEAN BUTTON */}
+            
+            {/* FIX OLD IDs BUTTON */}
+            <button onClick={handleFixOldIds} className="bg-amber-50 text-amber-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-amber-100 transition-colors border border-amber-200" title="Convert old 13-digit IDs to 8-digit">
+               <Hash size={18}/> Fix Old IDs
+            </button>
+
+            {/* CLEAN EMPTY BUTTON */}
             <button onClick={handleCleanEmptyRolls} className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-red-100 transition-colors border border-red-200" title="Delete all 0-meter rolls">
                <Trash2 size={18}/> Clean Empty
             </button>
+            
             <button onClick={handleExportInventory} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 hover:bg-blue-700 transition-colors">
                <FileSpreadsheet size={18}/> Export for Sales
             </button>
+            
             <button onClick={() => setShowAddFabric(true)} className="bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-md">New Fabric</button>
           </div>
       </div>
