@@ -510,7 +510,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.55: Added Location to Export) ---
+// --- 5. INVENTORY TAB (v5.56: Added Date Added to Export) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -531,12 +531,13 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   const handleExportInventory = () => {
     try {
       const exportData = fabrics.flatMap(f => (f.rolls || []).map(r => ({
+        "Date Added": r.dateAdded || '-', // <-- NEW: Date column added!
         "Fabric Code": f.mainCode,
         "Fabric Name": f.name,
         "Roll Code": r.subCode || '-',
         "Roll ID": r.rollId || '-',
         "Description": r.description || '-',
-        "Location": r.location || '-', // <-- NEW: Location column added here!
+        "Location": r.location || '-', 
         "Price": parseFloat(r.price || f.salePrice || 0),
         "Meters": parseFloat(r.meters || 0)
       })));
