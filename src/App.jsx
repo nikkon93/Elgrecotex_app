@@ -510,7 +510,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.54: Added 'Fix Old IDs' utility) ---
+// --- 5. INVENTORY TAB (v5.55: Added Location to Export) ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -536,6 +536,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
         "Roll Code": r.subCode || '-',
         "Roll ID": r.rollId || '-',
         "Description": r.description || '-',
+        "Location": r.location || '-', // <-- NEW: Location column added here!
         "Price": parseFloat(r.price || f.salePrice || 0),
         "Meters": parseFloat(r.meters || 0)
       })));
@@ -572,7 +573,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     }
   };
 
-  // --- NEW: FIX OLD IDs LOGIC ---
   const handleFixOldIds = async () => {
     if (!window.confirm("Convert all old 13-digit Roll IDs to the new 8-digit format? (Only do this if you haven't printed stickers yet!)")) return;
 
@@ -584,7 +584,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
         
         const updatedRolls = (fabric.rolls || []).map(r => {
           const currentId = String(r.rollId || '');
-          // If the ID is longer than 8 characters, or has a decimal/letter, replace it
           if (currentId.length > 8 || currentId.includes('.') || currentId.includes('e') || currentId.includes('EG-')) {
             needsUpdate = true;
             updatedRollsCount++;
@@ -682,12 +681,10 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
           </div>
           <div className="flex gap-2">
             
-            {/* FIX OLD IDs BUTTON */}
             <button onClick={handleFixOldIds} className="bg-amber-50 text-amber-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-amber-100 transition-colors border border-amber-200" title="Convert old 13-digit IDs to 8-digit">
                <Hash size={18}/> Fix Old IDs
             </button>
 
-            {/* CLEAN EMPTY BUTTON */}
             <button onClick={handleCleanEmptyRolls} className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-red-100 transition-colors border border-red-200" title="Delete all 0-meter rolls">
                <Trash2 size={18}/> Clean Empty
             </button>
