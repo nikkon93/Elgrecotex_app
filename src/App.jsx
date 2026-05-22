@@ -380,8 +380,14 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
 
       // B. Sales 
       const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-        "Date": o.date, "Invoice": o.invoiceNo, "Customer": o.customer, 
-        "Fabric": i.fabricCode, "Qty": i.meters, "Net Price": i.totalPrice
+        "Date": o.date, 
+        "Invoice": o.invoiceNo, 
+        "Customer": o.customer, 
+        "Fabric": i.fabricCode, 
+        "Roll Code": i.subCode || '-',
+        "Auto ID": i.rollId || '-',
+        "Qty": i.meters, 
+        "Net Price": i.totalPrice
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
