@@ -779,7 +779,21 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
       <div className="space-y-4">
         {filtered.map(fabric => {
           const rawRolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
-          const rolls = rawRolls.filter(r => r && typeof r === 'object');
+          let rolls = rawRolls.filter(r => r && typeof r === 'object');
+
+          // SMART ROLL FILTER: Only show matching rolls if searching for a specific ID/SubCode
+          const s = String(searchTerm || '').toLowerCase().trim();
+          if (s) {
+            const mainMatch = String(fabric?.mainCode || '').toLowerCase().includes(s) || String(fabric?.name || '').toLowerCase().includes(s);
+            if (!mainMatch) {
+              rolls = rolls.filter(r => 
+                String(r?.subCode || '').toLowerCase().includes(s) || 
+                String(r?.rollId || '').toLowerCase().includes(s) || 
+                String(r?.location || '').toLowerCase().includes(s)
+              );
+            }
+          }
+
           const totalMeters = rolls.reduce((s, r) => s + (parseFloat(r?.meters) || 0), 0);
 
           const rollSummary = rolls.reduce((acc, r) => {
