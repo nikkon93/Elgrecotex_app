@@ -1651,11 +1651,12 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   )
 };
 
-// --- UPDATED CONTACT LIST (v5.51: Searchable Customers & Suppliers) ---
+// --- UPDATED CONTACT LIST (v5.52: Added Notes Field) ---
 const ContactList = ({ title, data, collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); 
    const [editingId, setEditingId] = useState(null); 
-   const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' });
+   // ADDED 'notes' TO STATE
+   const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '', notes: '' });
    
    // NEW: Search state
    const [searchTerm, setSearchTerm] = useState('');
@@ -1663,12 +1664,14 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
    const handleSave = async () => { 
        if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } 
        else { await addDoc(collection(db, collectionName), newContact); } 
-       setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '' }); 
+       setShowAdd(false); setEditingId(null); 
+       // ADDED 'notes' TO RESET
+       setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '', notes: '' }); 
    };
    
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
 
-   // NEW: Filter logic (Searches by Name, VAT, Contact Person, or Phone)
+   // NEW: Filter logic (Searches by Name, VAT, Contact Person, Phone, OR Notes)
    const filteredData = (data || []).filter(d => {
        const s = searchTerm.toLowerCase().trim();
        if (!s) return true;
@@ -1676,7 +1679,8 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
            String(d.name || '').toLowerCase().includes(s) ||
            String(d.vatNumber || '').toLowerCase().includes(s) ||
            String(d.contact || '').toLowerCase().includes(s) ||
-           String(d.phone || '').toLowerCase().includes(s)
+           String(d.phone || '').toLowerCase().includes(s) ||
+           String(d.notes || '').toLowerCase().includes(s) 
        );
    });
 
@@ -1696,7 +1700,7 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
                 <Search className="text-slate-400" size={20}/>
                 <input 
                    className="w-full bg-transparent outline-none font-medium text-slate-700" 
-                   placeholder={`Search ${title} by Name, VAT, Contact, or Phone...`} 
+                   placeholder={`Search ${title} by Name, VAT, Contact, Phone, or Notes...`} 
                    value={searchTerm} 
                    onChange={e => setSearchTerm(e.target.value)} 
                 />
@@ -1706,18 +1710,31 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
          {showAdd && (
              <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 animate-in fade-in">
                  <h3 className="font-bold text-lg mb-6">{editingId ? `Edit` : `Add`} {title}</h3>
-                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Company Name" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="VAT Number" value={newContact.vatNumber} onChange={e => setNewContact({...newContact, vatNumber: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Contact Person" value={newContact.contact} onChange={e => setNewContact({...newContact, contact: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Email" value={newContact.email} onChange={e => setNewContact({...newContact, email: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Phone" value={newContact.phone} onChange={e => setNewContact({...newContact, phone: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Address" value={newContact.address} onChange={e => setNewContact({...newContact, address: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="City" value={newContact.city} onChange={e => setNewContact({...newContact, city: e.target.value})} />
-                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban} onChange={e => setNewContact({...newContact, iban: e.target.value})} />
+                 
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Company Name" value={newContact.name || ''} onChange={e => setNewContact({...newContact, name: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="VAT Number" value={newContact.vatNumber || ''} onChange={e => setNewContact({...newContact, vatNumber: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Contact Person" value={newContact.contact || ''} onChange={e => setNewContact({...newContact, contact: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Email" value={newContact.email || ''} onChange={e => setNewContact({...newContact, email: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Phone" value={newContact.phone || ''} onChange={e => setNewContact({...newContact, phone: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Address" value={newContact.address || ''} onChange={e => setNewContact({...newContact, address: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="City" value={newContact.city || ''} onChange={e => setNewContact({...newContact, city: e.target.value})} />
+                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban || ''} onChange={e => setNewContact({...newContact, iban: e.target.value})} />
                  </div>
+                 
+                 {/* ADDED NOTES TEXTAREA */}
+                 <div className="mb-6">
+                     <textarea 
+                        className="w-full border p-3 rounded-lg bg-slate-50 resize-none font-medium text-slate-700" 
+                        placeholder="Add specific notes, terms, or reminders about this contact..." 
+                        rows="3"
+                        value={newContact.notes || ''} 
+                        onChange={e => setNewContact({...newContact, notes: e.target.value})} 
+                     />
+                 </div>
+
                  <div className="flex justify-end gap-3">
-                     <button onClick={() => { setShowAdd(false); setEditingId(null); }} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                     <button onClick={() => { setShowAdd(false); setEditingId(null); setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '', notes: '' });}} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
                      <button onClick={handleSave} className="bg-slate-800 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-black">Save</button>
                  </div>
              </div>
@@ -1729,19 +1746,22 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
                      <tr><th className="p-4 pl-6">Company</th><th className="p-4">Contact</th><th className="p-4">Details</th><th className="p-4 text-right pr-6">Action</th></tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100">
-                     {/* FIX: Now maps over filteredData instead of all data */}
                      {filteredData.map(d => (
                          <tr key={d.id} className="hover:bg-slate-50 transition-colors">
-                             <td className="p-4 pl-6">
+                             <td className="p-4 pl-6 align-top">
                                  <p className="font-bold text-slate-800">{d.name}</p>
                                  <p className="text-xs text-slate-400">{d.vatNumber}</p>
                              </td>
-                             <td className="p-4">
+                             <td className="p-4 align-top">
                                  <p className="text-slate-700">{d.contact}</p>
                                  <p className="text-xs text-slate-400">{d.phone}</p>
                              </td>
-                             <td className="p-4 text-slate-500 text-xs">{d.address} {d.city} {d.iban}</td>
-                             <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                             <td className="p-4 text-slate-500 text-xs align-top">
+                                 <p>{d.address} {d.city} {d.iban}</p>
+                                 {/* DISPLAY NOTES */}
+                                 {d.notes && <p className="mt-2 text-amber-700 font-medium italic bg-amber-50 p-2 rounded border border-amber-100 whitespace-pre-wrap">📝 {d.notes}</p>}
+                             </td>
+                             <td className="p-4 text-right pr-6 flex justify-end gap-3 align-top pt-5">
                                  <button onClick={() => { setNewContact(d); setEditingId(d.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
                                  <button onClick={() => handleDelete(d.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
                              </td>
