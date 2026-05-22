@@ -662,6 +662,20 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     } catch (e) { alert(e.message); }
   };
 
+  const handleDeleteFabric = async (fabricId, rollsCount) => {
+    if (rollsCount > 0) {
+      alert("Cannot delete a fabric that still has rolls. Please delete all rolls first.");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to delete this fabric completely? This action cannot be undone.")) return;
+    
+    try {
+      await deleteDoc(doc(db, "fabrics", fabricId));
+    } catch (e) { 
+      alert("Error deleting fabric: " + e.message); 
+    }
+  };
+
   const filtered = (fabrics || []).filter(f => {
     try {
       const s = String(searchTerm || '').toLowerCase().trim();
@@ -789,6 +803,15 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                   )}
                 </div>
                 <div className="flex gap-2">
+                  {rolls.length === 0 && (
+                    <button 
+                      onClick={() => handleDeleteFabric(fabric.id, rolls.length)} 
+                      className="p-2 text-red-300 hover:text-red-600 transition-colors"
+                      title="Delete Empty Fabric"
+                    >
+                      <Trash2 size={20}/>
+                    </button>
+                  )}
                   <button onClick={() => setEditingFabric(fabric)} className="p-2 text-slate-400 hover:text-blue-600"><Pencil size={20}/></button>
                   <button onClick={() => {setAddRollOpen(fabric.id); setEditRollMode(false); setCurrentRoll({ rollId: '', subCode: '', description: '', designCol: '', meters: '', location: '', price: '', dateAdded: new Date().toISOString().split('T')[0] });}} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow-sm">+ Roll</button>
                 </div>
