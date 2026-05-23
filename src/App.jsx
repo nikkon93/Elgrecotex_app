@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db } from './firebase'; 
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, query, orderBy, setDoc } from 'firebase/firestore';
 import { 
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
-  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, Hash, FileDown,
-  FileSpreadsheet, Euro, TrendingUp, Wallet
+  Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, ChevronLeft, Hash, FileDown,
+  FileSpreadsheet, Euro, TrendingUp, Wallet, Calendar
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
@@ -142,18 +142,14 @@ const getSubcodesSummary = (rolls) => {
   const summary = {};
   if (!rolls) return [];
 
-  // Loop through rolls and group them
   rolls.forEach(r => {
-    // If we haven't seen this subcode yet, start a new entry
     if (!summary[r.subCode]) {
         summary[r.subCode] = { meters: 0, count: 0 };
     }
-    // Add the meters and count
     summary[r.subCode].meters += parseFloat(r.meters || 0);
     summary[r.subCode].count += 1;
   });
 
-  // Convert the summary object back into a list
   return Object.entries(summary).map(([subCode, data]) => ({
     subCode,
     meters: data.meters,
@@ -183,14 +179,11 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
       <div className="w-full max-w-4xl mb-6 flex justify-between items-center print:hidden">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to List</button>
-          
-          {/* PDF DOWNLOAD BUTTON */}
           <button onClick={() => downloadPDF('printable-content', pdfName)} className="bg-red-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-red-700 flex items-center gap-2 animate-bounce">
             <FileDown size={18}/> Download PDF
           </button>
       </div>
 
-      {/* ID 'printable-content' is what gets converted to PDF */}
       <div id="printable-content" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
             <div>
@@ -218,7 +211,6 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
             </div>
         </div>
 
-        {/* UPDATED TABLE WITH SEPARATE ROLL CODE COLUMN */}
         <div className="border rounded-lg overflow-hidden mb-12">
             <table className="w-full">
                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
@@ -337,7 +329,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
   );
 };
 
-// --- MAIN DASHBOARD (v5.47: Added Total Rolls Metric) ---
+// --- MAIN DASHBOARD ---
 const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
   
   // 1. FILTER DATA BY DATE
@@ -348,7 +340,6 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   // 2. CALCULATE METRICS
   const totalStockMeters = (fabrics || []).reduce((sum, f) => sum + (f.rolls || []).reduce((s, r) => s + (parseFloat(r.meters) || 0), 0), 0);
   
-  // NEW: Calculate Total Active Rolls (Only count rolls with > 0 meters)
   const totalActiveRolls = (fabrics || []).reduce((sum, f) => {
       return sum + (f.rolls || []).filter(r => (parseFloat(r.meters) || 0) > 0).length;
   }, 0);
@@ -391,7 +382,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
-      /// C. Purchases
+      // C. Purchases
       const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
         "Date": p.date, 
         "Supplier": p.supplier, 
@@ -457,10 +448,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       {/* METRIC CARDS - NOW WITH 5 COLUMNS */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" onClick={() => onNavigate('inventory')}/>
-        
-        {/* NEW: ACTIVE ROLLS CARD */}
         <DashboardCard title="Active Rolls" value={totalActiveRolls} icon={Tag} color="purple" onClick={() => onNavigate('inventory')}/>
-        
         <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('sales')}/>
         <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('sales')}/>
         <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color={netProfit >= 0 ? "emerald" : "red"} onClick={() => onNavigate('dashboard')}/>
@@ -502,7 +490,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
     </div>
   );
 };
-// --- 5. UNKILLABLE INVENTORY (v5.30: All Fields + Auto-ID + Delete + Safety) ---
+// --- 5. UNKILLABLE INVENTORY ---
 
 const HighlightText = ({ text, highlight }) => {
   const strText = String(text || '');
@@ -521,7 +509,7 @@ const HighlightText = ({ text, highlight }) => {
   );
 };
 
-// --- 5. INVENTORY TAB (v5.57: Moved Width & Link to Main Fabric) ---
+// --- 5. INVENTORY TAB ---
 const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddFabric, setShowAddFabric] = useState(false);
@@ -529,10 +517,8 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
   const [addRollOpen, setAddRollOpen] = useState(null);
   const [editRollMode, setEditRollMode] = useState(false);
   
-  // NEW: Added width and link to the main fabric state
   const [newFabricData, setNewFabricData] = useState({ mainCode: '', name: '', color: '', supplier: '', salePrice: '', width: '', link: '' });
   
-  // REMOVED: width and image from the roll state
   const [currentRoll, setCurrentRoll] = useState({ 
     rollId: '', subCode: '', description: '', designCol: '', 
     meters: '', location: '', price: '', dateAdded: '' 
@@ -704,7 +690,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-4 w-full">
             <Search className="text-slate-400" size={20}/>
-            <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search by Code, ID, Loc..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search Fabric, Roll Code, Auto ID, or Location..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
           <div className="flex gap-2">
             <button onClick={handleFixOldIds} className="bg-amber-50 text-amber-600 px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2 hover:bg-amber-100 transition-colors border border-amber-200" title="Convert old 13-digit IDs to 8-digit">
@@ -734,7 +720,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                     </select>
                     <input className="w-full p-3 border rounded-xl" type="number" placeholder="Sale Price" value={newFabricData.salePrice} onChange={e => setNewFabricData({...newFabricData, salePrice: e.target.value})} />
                     
-                    {/* NEW: Width and Link fields for Main Fabric */}
                     <div className="grid grid-cols-2 gap-3">
                         <input className="w-full p-3 border rounded-xl" placeholder="Width (e.g. 150cm)" value={newFabricData.width} onChange={e => setNewFabricData({...newFabricData, width: e.target.value})} />
                         <input className="w-full p-3 border rounded-xl" placeholder="Link / URL" value={newFabricData.link} onChange={e => setNewFabricData({...newFabricData, link: e.target.value})} />
@@ -764,7 +749,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                         <input className="w-full p-3 border rounded-xl" type="number" placeholder="Price" value={editingFabric.salePrice || ''} onChange={e => setEditingFabric({...editingFabric, salePrice: e.target.value})} />
                     </div>
                     
-                    {/* NEW: Width and Link fields for Main Fabric */}
                     <div className="grid grid-cols-2 gap-3">
                         <input className="w-full p-3 border rounded-xl" placeholder="Width (e.g. 150cm)" value={editingFabric.width || ''} onChange={e => setEditingFabric({...editingFabric, width: e.target.value})} />
                         <input className="w-full p-3 border rounded-xl" placeholder="Link / URL" value={editingFabric.link || ''} onChange={e => setEditingFabric({...editingFabric, link: e.target.value})} />
@@ -781,7 +765,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
           const rawRolls = Array.isArray(fabric?.rolls) ? fabric.rolls : [];
           let rolls = rawRolls.filter(r => r && typeof r === 'object');
 
-          // SMART ROLL FILTER: Only show matching rolls if searching for a specific ID/SubCode
+          // SMART ROLL FILTER
           const s = String(searchTerm || '').toLowerCase().trim();
           if (s) {
             const mainMatch = String(fabric?.mainCode || '').toLowerCase().includes(s) || String(fabric?.name || '').toLowerCase().includes(s);
@@ -812,11 +796,9 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                   <h3 className="font-bold text-lg text-slate-800"><HighlightText text={fabric?.mainCode} highlight={searchTerm}/> - {fabric?.name}</h3>
                   <p className="text-sm text-slate-500">
                     {totalMeters.toFixed(2)}m Total • {rolls.length} rolls • <span className="text-blue-500 font-bold">{fabric.supplier}</span>
-                    {/* NEW: Display width here */}
                     {fabric.width && ` • Width: ${fabric.width}`}
                   </p>
                   
-                  {/* NEW: Clickable Link here */}
                   {fabric.link && (
                     <a href={fabric.link.startsWith('http') ? fabric.link : `https://${fabric.link}`} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:text-blue-700 font-medium mt-1 inline-block bg-blue-50 px-2 py-1 rounded border border-blue-100">
                        🔗 View Link
@@ -852,7 +834,6 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                     <div><label className="text-[10px] font-bold text-slate-400 uppercase">Loc</label><input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.location || ''} onChange={e => setCurrentRoll({...currentRoll, location: e.target.value})} /></div>
                   </div>
                   
-                  {/* REMOVED Width & Link from Roll level, added Description here instead */}
                   <div className="grid grid-cols-2 gap-4">
                      <div><label className="text-[10px] font-bold text-slate-400 uppercase">Design / Details</label><input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.designCol || ''} onChange={e => setCurrentRoll({...currentRoll, designCol: e.target.value})} /></div>
                      <div><label className="text-[10px] font-bold text-slate-400 uppercase">Description</label><input className="w-full p-3 border-2 rounded-xl bg-white" value={currentRoll.description || ''} onChange={e => setCurrentRoll({...currentRoll, description: e.target.value})} /></div>
@@ -938,7 +919,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
           onChange={e => {
             setSearch(e.target.value);
             setIsOpen(true);
-            if (value) onChange(''); // Clear actual value when typing a new search
+            if (value) onChange(''); 
           }}
           onClick={() => { if(!disabled) setIsOpen(true); }}
         />
@@ -991,7 +972,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
       setShowAdd(true); 
   };
 
-  // --- NEW: BULK SALES IMPORT LOGIC ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1010,11 +990,9 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           const rollId = String(getVal('Roll ID') || getVal('ROLL ID') || '');
           const fabricCode = String(getVal('Fabric Code') || getVal('FABRIC CODE') || getVal('Fabric') || '');
           
-          // User edits the exported "Meters" column to be the SOLD amount
           const meters = parseFloat(getVal('Meters') || getVal('METERS') || getVal('Qty') || 0);
           const price = parseFloat(getVal('Price') || getVal('PRICE') || 0);
 
-          // We fetch the DB roll directly using the Roll ID to ensure 100% accuracy
           const dbFabric = fabrics.find(f => String(f.mainCode) === fabricCode);
           const dbRoll = dbFabric?.rolls?.find(r => String(r.rollId) === rollId);
 
@@ -1029,7 +1007,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             pricePerMeter: price,
             totalPrice: meters * price
           };
-        }).filter(i => i.meters > 0 && i.rollId); // Only import rows that have > 0 meters and an ID
+        }).filter(i => i.meters > 0 && i.rollId); 
 
         if (importedItems.length > 0) {
           setNewOrder(prev => ({ ...prev, items: [...(prev.items || []), ...importedItems] }));
@@ -1133,7 +1111,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   return (
     <div className="space-y-6">
-      {/* Hidden File Input for Bulk Sales */}
       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
 
       <div className="flex justify-between items-center">
@@ -1175,8 +1152,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
             <div className="flex justify-between items-center mb-4">
                <h4 className="font-bold text-blue-800 text-sm uppercase">Select Stock to Sell</h4>
-               
-               {/* BULK IMPORT BUTTON INSIDE SALES MODAL */}
                <button onClick={() => fileInputRef.current.click()} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm hover:bg-emerald-700 transition-colors">
                   <Upload size={16}/> Import from Excel
                </button>
@@ -1628,7 +1603,6 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Company</th><th className="p-4">Date</th><th className="p-4 text-right">Net</th><th className="p-4 text-right">VAT</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6"></th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {/* FIXED: BLANK SCREEN (|| []) */}
             {(expenses||[]).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd).map(e => (
               <tr key={e.id} className="hover:bg-slate-50">
                 <td className="p-4 pl-6 font-mono text-slate-600">#{e.invoiceNo}</td>
@@ -1655,23 +1629,19 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
 const ContactList = ({ title, data, collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); 
    const [editingId, setEditingId] = useState(null); 
-   // ADDED 'notes' TO STATE
    const [newContact, setNewContact] = useState({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '', notes: '' });
    
-   // NEW: Search state
    const [searchTerm, setSearchTerm] = useState('');
 
    const handleSave = async () => { 
        if (editingId) { await updateDoc(doc(db, collectionName, editingId), newContact); } 
        else { await addDoc(collection(db, collectionName), newContact); } 
        setShowAdd(false); setEditingId(null); 
-       // ADDED 'notes' TO RESET
        setNewContact({ name: '', contact: '', email: '', phone: '', vatNumber: '', address: '', city: '', postalCode: '', iban: '', notes: '' }); 
    };
    
    const handleDelete = async (id) => { if(confirm("Delete this contact?")) await deleteDoc(doc(db, collectionName, id)); }
 
-   // NEW: Filter logic (Searches by Name, VAT, Contact Person, Phone, OR Notes)
    const filteredData = (data || []).filter(d => {
        const s = searchTerm.toLowerCase().trim();
        if (!s) return true;
@@ -1694,7 +1664,6 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
             <button onClick={() => setShowAdd(true)} className="bg-slate-800 text-white px-6 py-3 rounded-xl font-bold hover:bg-black shadow-lg flex items-center gap-2"><Plus size={20}/> Add {title}</button>
          </div>
 
-         {/* NEW: Search Bar UI */}
          {!showAdd && (
              <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4 transition-all">
                 <Search className="text-slate-400" size={20}/>
@@ -1722,7 +1691,6 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
                      <input className="border p-3 rounded-lg bg-slate-50" placeholder="IBAN" value={newContact.iban || ''} onChange={e => setNewContact({...newContact, iban: e.target.value})} />
                  </div>
                  
-                 {/* ADDED NOTES TEXTAREA */}
                  <div className="mb-6">
                      <textarea 
                         className="w-full border p-3 rounded-lg bg-slate-50 resize-none font-medium text-slate-700" 
@@ -1758,7 +1726,6 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
                              </td>
                              <td className="p-4 text-slate-500 text-xs align-top">
                                  <p>{d.address} {d.city} {d.iban}</p>
-                                 {/* DISPLAY NOTES */}
                                  {d.notes && <p className="mt-2 text-amber-700 font-medium italic bg-amber-50 p-2 rounded border border-amber-100 whitespace-pre-wrap">📝 {d.notes}</p>}
                              </td>
                              <td className="p-4 text-right pr-6 flex justify-end gap-3 align-top pt-5">
@@ -1777,13 +1744,12 @@ const ContactList = ({ title, data, collectionName, onBack }) => {
    );
 };
 
-// --- UPDATED SAMPLES: SMART ROLL DROPDOWN ---
+// --- SAMPLES TAB ---
 const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [viewLog, setViewLog] = useState(null); 
   const [editingId, setEditingId] = useState(null); 
   const [newLog, setNewLog] = useState({ date: new Date().toISOString().split('T')[0], customer: '', notes: '', items: [] });
-  // NEW: Added price to item state
   const [item, setItem] = useState({ fabricCode: '', description: '', meters: '', price: '' });
 
   if (viewLog) return <SampleSlipViewer sampleLog={viewLog} onBack={() => setViewLog(null)} />;
@@ -1814,7 +1780,6 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
           <div className="bg-purple-50 p-6 rounded-xl mb-6">
              <h4 className="font-bold text-purple-800 mb-4 text-sm uppercase">Fabrics</h4>
              <div className="flex gap-4 items-end mb-2">
-                {/* NEW: Smart Dropdown listing ROLLS */}
                 <div className="flex-1"><label className="text-xs font-bold text-purple-400">Fabric/Roll</label><input className="w-full border p-3 rounded-lg bg-white" list="fabric-roll-options" value={item.fabricCode} onChange={e => setItem({...item, fabricCode: e.target.value})} placeholder="Select Roll or Type Name"/>
                   <datalist id="fabric-roll-options">
                     {(fabrics || []).flatMap(fabric => 
@@ -1830,7 +1795,6 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
                 
                 <div className="flex-1"><label className="text-xs font-bold text-purple-400">Details</label><input className="w-full border p-3 rounded-lg bg-white" placeholder="Color / Subcode" value={item.description} onChange={e => setItem({...item, description: e.target.value})} /></div>
                 <div className="w-24"><label className="text-xs font-bold text-purple-400">Length</label><input className="w-full border p-3 rounded-lg bg-white" placeholder="M" value={item.meters} onChange={e => setItem({...item, meters: e.target.value})} /></div>
-                {/* NEW: Price Field */}
                 <div className="w-24"><label className="text-xs font-bold text-purple-400">Price (€)</label><input className="w-full border p-3 rounded-lg bg-white" placeholder="€" value={item.price} onChange={e => setItem({...item, price: e.target.value})} /></div>
                 <button onClick={addItem} className="bg-purple-600 text-white px-6 py-3 rounded-lg font-bold h-[50px] shadow-md">Add</button>
              </div>
@@ -1852,7 +1816,6 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Date</th><th className="p-4">Customer</th><th className="p-4 text-center">Items</th><th className="p-4">Notes</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {/* FIXED: BLANK SCREEN */}
             {(samples || []).length > 0 ? samples.map(s => (
               <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                 <td className="p-4 pl-6 text-slate-500">{s.date}</td><td className="p-4 font-bold text-slate-800">{s.customer}</td><td className="p-4 text-center"><span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs font-bold">{(s.items || []).length} Fabrics</span></td><td className="p-4 text-slate-500 italic">{s.notes}</td>
@@ -1865,6 +1828,127 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
     </div>
   );
 };
+
+// --- NEW CALENDAR & NOTES TAB ---
+const CalendarTab = ({ onBack }) => {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [notes, setNotes] = useState({});
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [noteText, setNoteText] = useState('');
+
+  useEffect(() => {
+    // Fetch all notes from Firebase
+    const unsub = onSnapshot(collection(db, 'calendar_notes'), (snap) => {
+      const fetchedNotes = {};
+      snap.docs.forEach(d => { fetchedNotes[d.id] = d.data().text; });
+      setNotes(fetchedNotes);
+    });
+    return () => unsub();
+  }, []);
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  
+  // 0 = Sunday, 1 = Monday. Let's adjust so the calendar starts on Monday (European standard)
+  let firstDayOfMonth = new Date(year, month, 1).getDay() - 1;
+  if (firstDayOfMonth === -1) firstDayOfMonth = 6; 
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const days = [];
+  
+  // Pad empty days at the start of the month
+  for (let i = 0; i < firstDayOfMonth; i++) { days.push(null); }
+  for (let i = 1; i <= daysInMonth; i++) { days.push(i); }
+
+  const openNote = (day) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    setSelectedDate(dateStr);
+    setNoteText(notes[dateStr] || '');
+  };
+
+  const saveNote = async () => {
+    if (!noteText.trim()) {
+      await deleteDoc(doc(db, "calendar_notes", selectedDate));
+    } else {
+      await setDoc(doc(db, "calendar_notes", selectedDate), { text: noteText });
+    }
+    setSelectedDate(null);
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      <div className="flex justify-between items-center bg-white p-6 rounded-2xl border shadow-sm">
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Calendar</h2><p className="text-slate-500">Plan and save daily notes</p></div>
+        </div>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 border rounded-lg hover:bg-slate-50 text-slate-500"><ChevronLeft size={20}/></button>
+          <h3 className="text-xl font-bold w-48 text-center text-slate-800">{monthNames[month]} {year}</h3>
+          <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 border rounded-lg hover:bg-slate-50 text-slate-500"><ChevronRight size={20}/></button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border shadow-sm p-6">
+        <div className="grid grid-cols-7 gap-4 mb-4">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+            <div key={d} className="text-center font-bold text-slate-400 uppercase text-xs tracking-wider">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-4">
+          {days.map((day, idx) => {
+            if (!day) return <div key={`empty-${idx}`} className="h-28 bg-slate-50 rounded-xl border border-dashed border-slate-200"></div>;
+            
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const hasNote = notes[dateStr];
+            
+            // Check if this cell is today's exact date
+            const today = new Date();
+            const isToday = day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+
+            return (
+              <div 
+                key={dateStr} 
+                onClick={() => openNote(day)}
+                className={`h-28 p-3 rounded-xl border transition-all cursor-pointer hover:-translate-y-1 hover:shadow-md flex flex-col ${isToday ? 'border-amber-500 bg-amber-50 shadow-sm' : 'border-slate-100 bg-white'}`}
+              >
+                <div className="flex justify-between items-start">
+                  <span className={`font-bold ${isToday ? 'text-amber-600 text-lg' : 'text-slate-700'}`}>{day}</span>
+                  {hasNote && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 mt-1 shadow-sm"></span>}
+                </div>
+                {hasNote && <p className="text-[10px] text-slate-500 mt-auto overflow-hidden text-ellipsis line-clamp-3 font-medium leading-tight">{hasNote}</p>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedDate && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in-95">
+            <h3 className="text-xl font-bold mb-4 text-slate-800 flex justify-between items-center">
+              Notes for {selectedDate}
+              <button onClick={() => setSelectedDate(null)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+            </h3>
+            <textarea 
+              className="w-full border p-4 rounded-xl bg-slate-50 h-40 resize-none font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+              placeholder="Type your notes, reminders, or tasks for this day..."
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setSelectedDate(null)} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+              <button onClick={saveNote} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700">Save Note</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 
 // --- 5. MAIN APP COMPONENT ---
 const FabricERP = () => {
@@ -1930,10 +2014,14 @@ const FabricERP = () => {
            <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-4">Main</p>
            <NavItem id="dashboard" icon={Home} label="Dashboard" />
            <NavItem id="inventory" icon={Package} label="Inventory" />
+           {/* NEW CALENDAR TAB ADDED HERE */}
+           <NavItem id="calendar" icon={Calendar} label="Calendar" />
+           
            <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">Finance</p>
            <NavItem id="salesinvoices" icon={FileText} label="Sales Invoices" />
            <NavItem id="purchases" icon={BarChart3} label="Purchases" />
            <NavItem id="expenses" icon={DollarSign} label="Expenses" />
+           
            <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">CRM & More</p>
            <NavItem id="samples" icon={Tag} label="Samples" />
            <NavItem id="customers" icon={Users} label="Customers" />
@@ -1969,8 +2057,12 @@ const FabricERP = () => {
         {/* SCROLLABLE CONTENT */}
         <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
            <div className="max-w-7xl mx-auto">
-              {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} setActiveTab={setActiveTab} />}
+              {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onNavigate={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
+              
+              {/* NEW CALENDAR ROUTE ADDED HERE */}
+              {activeTab === 'calendar' && <CalendarTab onBack={() => setActiveTab('dashboard')} />}
+              
               {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
