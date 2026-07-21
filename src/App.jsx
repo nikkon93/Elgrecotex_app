@@ -949,27 +949,33 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.50: Bulk Excel Import Added) ---
+// --- UPDATED SALES INVOICES (v5.51: Added Interactive Payment Status) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
-  const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] });
+  const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] });
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
   
   const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
-  const fileInputRef = React.useRef(null); // Reference for Excel Import
+  const fileInputRef = React.useRef(null);
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
 
   const handleNewInvoice = () => { 
       setNewOrder({ 
           customer: '', invoiceNo: '', orderId: generateOrderId(), 
-          date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] 
+          date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] 
       }); 
       setEditingId(null); 
       setShowAdd(true); 
+  };
+
+  // --- TOGGLE PAYMENT STATUS INSTANTLY (UNPAID / PAID) ---
+  const togglePayment = async (order) => {
+    const nextPaymentStatus = order.paymentStatus === 'Paid' ? 'Unpaid' : 'Paid';
+    await updateDoc(doc(db, "orders", order.id), { paymentStatus: nextPaymentStatus });
   };
 
   const handleFileUpload = (e) => {
@@ -1080,7 +1086,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); 
     const vat = subtotal * (newOrder.vatRate / 100); 
     const final = subtotal + vat; 
-    const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final }; 
+    const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final, paymentStatus: newOrder.paymentStatus || 'Unpaid' }; 
     
     if (editingId) { 
         const oldOrder = orders.find(o => o.id === editingId);
@@ -1096,7 +1102,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     } 
     setShowAdd(false); 
     setEditingId(null); 
-    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', items: [] }); 
+    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] }); 
   };
 
   const updateStatus = async (id, newStatus) => { 
@@ -1214,9 +1220,21 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
       )}
 
+      {/* TABLE SHOWING STATUS AND THE NEW PAYMENT COLUMN */}
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Order ID</th><th className="p-4">Invoice</th><th className="p-4">Customer</th><th className="p-4">Date</th><th className="p-4 text-right">Total</th><th className="p-4 text-center">Status</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
+          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
+            <tr>
+              <th className="p-4 pl-6">Order ID</th>
+              <th className="p-4">Invoice</th>
+              <th className="p-4">Customer</th>
+              <th className="p-4">Date</th>
+              <th className="p-4 text-right">Total</th>
+              <th className="p-4 text-center">Status</th>
+              <th className="p-4 text-center">Payment</th>
+              <th className="p-4 text-right pr-6">Action</th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-slate-100">
             {(orders||[]).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd).map(order => (
               <tr key={order.id} className="hover:bg-slate-50 transition-colors">
@@ -1239,6 +1257,19 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                             <option value="Cancelled">Cancelled</option>
                         </select>
                     )}
+                </td>
+                {/* INTERACTIVE PAYMENT STATUS BUTTON */}
+                <td className="p-4 text-center">
+                  <button 
+                    onClick={() => togglePayment(order)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                      order.paymentStatus === 'Paid' 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                    }`}
+                  >
+                    {order.paymentStatus || 'Unpaid'}
+                  </button>
                 </td>
                 <td className="p-4 text-right pr-6 flex justify-end gap-3">
                   <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View"><Eye size={18}/></button>
