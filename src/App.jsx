@@ -378,7 +378,9 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         "Roll Code": i.subCode || '-',
         "Auto ID": i.rollId || '-',
         "Qty": i.meters, 
-        "Net Price": i.totalPrice
+        "Net Price": i.totalPrice,
+        "Order Status": o.status || 'Pending',
+        "Payment Status": o.paymentStatus || 'Unpaid'
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
