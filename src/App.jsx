@@ -951,11 +951,12 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.51: Added Interactive Payment Status) ---
+// --- UPDATED SALES INVOICES (v5.52: Added Client/Invoice Search Field) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
+  const [searchTerm, setSearchTerm] = useState(''); // SEARCH STATE ADDED
   const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] });
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
@@ -974,7 +975,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
       setShowAdd(true); 
   };
 
-  // --- TOGGLE PAYMENT STATUS INSTANTLY (UNPAID / PAID) ---
   const togglePayment = async (order) => {
     const nextPaymentStatus = order.paymentStatus === 'Paid' ? 'Unpaid' : 'Paid';
     await updateDoc(doc(db, "orders", order.id), { paymentStatus: nextPaymentStatus });
@@ -1117,6 +1117,18 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const deleteOrder = async (id) => { if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id)); }
 
+  // FILTERED ORDERS LIST (DATE + SEARCH TERM)
+  const filteredOrders = (orders || []).filter(o => {
+    const matchesDate = o.date >= dateRangeStart && o.date <= dateRangeEnd;
+    const s = searchTerm.toLowerCase().trim();
+    const matchesSearch = !s || 
+      String(o.customer || '').toLowerCase().includes(s) ||
+      String(o.invoiceNo || '').toLowerCase().includes(s) ||
+      String(o.orderId || '').toLowerCase().includes(s);
+
+    return matchesDate && matchesSearch;
+  });
+
   return (
     <div className="space-y-6">
       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
@@ -1128,6 +1140,22 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
         <button onClick={handleNewInvoice} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"><Plus size={20}/> New Invoice</button>
       </div>
+
+      {/* NEW SEARCH BAR */}
+      {!showAdd && (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <Search className="text-slate-400" size={20}/>
+            <input 
+              className="w-full bg-transparent outline-none font-medium text-slate-700" 
+              placeholder="Search invoices by Client Name, Invoice #, or Order ID..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1 bg-slate-100 rounded-md">Clear</button>
+            )}
+        </div>
+      )}
 
       {showAdd && (
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 animate-in fade-in">
@@ -1222,7 +1250,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
       )}
 
-      {/* TABLE SHOWING STATUS AND THE NEW PAYMENT COLUMN */}
+      {/* TABLE RENDERING FILTERED ORDERS */}
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
@@ -1238,7 +1266,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {(orders||[]).filter(o => o.date >= dateRangeStart && o.date <= dateRangeEnd).map(order => (
+            {filteredOrders.map(order => (
               <tr key={order.id} className="hover:bg-slate-50 transition-colors">
                 <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId || '-'}</td>
                 <td className="p-4 font-bold text-slate-800">{order.invoiceNo}</td>
@@ -1260,7 +1288,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                         </select>
                     )}
                 </td>
-                {/* INTERACTIVE PAYMENT STATUS BUTTON */}
                 <td className="p-4 text-center">
                   <button 
                     onClick={() => togglePayment(order)}
@@ -1280,6 +1307,11 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 </td>
               </tr>
             ))}
+            {filteredOrders.length === 0 && (
+              <tr>
+                <td colSpan="8" className="p-8 text-center text-slate-400 italic">No invoices found matching your search.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
