@@ -66,7 +66,29 @@ const downloadPDF = (elementId, filename) => {
   window.html2pdf().set(opt).from(element).save();
 };
 
+// --- UTILITY: GREEK DATE FORMATTER (DD/MM/YYYY) ---
+const formatGreekDate = (dateStr) => {
+  if (!dateStr) return '-';
+  // Handles YYYY-MM-DD strings
+  if (typeof dateStr === 'string' && dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+  }
+  
+  // Handles standard Date objects or timestamps
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
 
+  return dateStr;
+};
 
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
@@ -195,7 +217,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
               <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type} INVOICE</h2>
               <p className="text-slate-500 font-mono mt-1 text-lg">#{invoice.invoiceNo}</p>
               {invoice.orderId && <p className="text-slate-400 text-xs mt-1 font-mono">Ref: {invoice.orderId}</p>}
-              <p className="text-slate-500 text-sm mt-1">{invoice.date}</p>
+              <p className="text-slate-500 text-sm mt-1">{formatGreekDate(invoice.date)}</p>
             </div>
         </div>
 
@@ -362,37 +384,37 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       
       // A. Inventory 
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
-        "Date Added": r.dateAdded || '-',
-        "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
-        "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
-        "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
+       "Date Added": formatGreekDate(r.dateAdded),
+       "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
+       "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
+       "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
 
       // B. Sales 
       const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-        "Date": o.date, 
-        "Invoice": o.invoiceNo, 
-        "Customer": o.customer, 
-        "Fabric": i.fabricCode, 
-        "Roll Code": i.subCode || '-',
-        "Auto ID": i.rollId || '-',
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice,
-        "Order Status": o.status || 'Pending',
-        "Payment Status": o.paymentStatus || 'Unpaid'
+       "Date": formatGreekDate(o.date), 
+       "Invoice": o.invoiceNo, 
+       "Customer": o.customer, 
+       "Fabric": i.fabricCode, 
+       "Roll Code": i.subCode || '-',
+       "Auto ID": i.rollId || '-',
+       "Qty": i.meters, 
+       "Net Price": i.totalPrice,
+       "Order Status": o.status || 'Pending',
+       "Payment Status": o.paymentStatus || 'Unpaid'
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
       // C. Purchases
       const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
-        "Date": p.date, 
-        "Supplier": p.supplier, 
-        "Invoice": p.invoiceNo, 
-        "Fabric": i.fabricCode, 
-        "Roll Code": i.subCode || '-',
-        "Qty": i.meters, 
-        "Net Price": i.totalPrice 
+       "Date": formatGreekDate(p.date), 
+       "Supplier": p.supplier, 
+       "Invoice": p.invoiceNo, 
+       "Fabric": i.fabricCode, 
+       "Roll Code": i.subCode || '-',
+       "Qty": i.meters, 
+       "Net Price": i.totalPrice 
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
@@ -409,11 +431,15 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         if (net === 0 && finalTotal > 0) net = finalTotal - vat;
 
         return {
-          "Date": e.date || '-', "Company": e.entity || e.supplier || e.company || '-', 
+          "Date": formatGreekDate(e.date),
+          "Company": e.entity || e.supplier || e.company || '-', 
           "Tax ID": e.taxId || e.vatNumber || '-',
-          "Description": finalDesc, "Net Value": parseFloat(net.toFixed(2)),
-          "VAT": parseFloat(vat.toFixed(2)), "Total": parseFloat(finalTotal.toFixed(2))
-        };
+          "Invoice #": e.invoiceNo || '-',
+          "Description": finalDesc,
+          "Net Value": parseFloat(net.toFixed(2)),
+          "VAT": parseFloat(vat.toFixed(2)),
+          "Total": parseFloat(finalTotal.toFixed(2))
+       };
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
@@ -1272,7 +1298,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                 <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId || '-'}</td>
                 <td className="p-4 font-bold text-slate-800">{order.invoiceNo}</td>
                 <td className="p-4 font-bold text-slate-800">{order.customer}</td>
-                <td className="p-4 text-slate-500">{order.date}</td>
+                <td className="p-4 text-slate-500">{formatGreekDate(order.date)}</td>
                 <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(order.finalPrice)||0).toFixed(2)}</td>
                 <td className="p-4 text-center">
                     {order.status === 'Completed' ? (
@@ -1576,7 +1602,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td>
                       <td className="p-4 font-bold text-slate-800">{p.supplier || '-'}</td>
-                      <td className="p-4 text-slate-500">{p.date || '-'}</td>
+                      <td className="p-4 text-slate-500">{formatGreekDate(p.date)}</td>
                       <td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{(p.items||[]).length}</span></td>
                       <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(p.finalPrice)||0).toFixed(2)}</td>
                       <td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewInvoice(p)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => { setNewPurchase(p); setEditingId(p.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
@@ -1686,7 +1712,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
                 <td className="p-4 pl-6 font-mono text-slate-600">#{e.invoiceNo}</td>
                 <td className="p-4 font-bold text-slate-800">{e.company}</td>
                 <td className="p-4 font-mono text-xs text-slate-500">{e.taxId || '-'}</td>
-                <td className="p-4 text-slate-500">{e.date}</td>
+                <td className="p-4 text-slate-500">{formatGreekDate(e.date)}</td>
                 <td className="p-4 text-right">€{(e.netPrice || 0).toFixed(2)}</td>
                 <td className="p-4 text-right">€{(e.vatAmount || 0).toFixed(2)}</td>
                 <td className="p-4 text-right font-bold text-slate-800">€{(e.finalPrice || 0).toFixed(2)}</td>
