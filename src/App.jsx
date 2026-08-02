@@ -396,7 +396,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
-      // E. Expenses (Deep Logic)
+      // E. Expenses (Deep Logic with Tax ID Support)
       const exp = (expenses || []).map(e => {
         const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
         const finalDesc = e.description || itemDesc || '-';
@@ -410,6 +410,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
 
         return {
           "Date": e.date || '-', "Company": e.entity || e.supplier || e.company || '-', 
+          "Tax ID": e.taxId || e.vatNumber || '-',
           "Description": finalDesc, "Net Value": parseFloat(net.toFixed(2)),
           "VAT": parseFloat(vat.toFixed(2)), "Total": parseFloat(finalTotal.toFixed(2))
         };
@@ -1587,12 +1588,12 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
     </div>
   )
 };
-// --- UPDATED EXPENSES: MULTI-ITEM SUPPORT ---
+// --- UPDATED EXPENSES: MULTI-ITEM SUPPORT + TAX ID ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
-  const [newExpense, setNewExpense] = useState({ company: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
+  const [newExpense, setNewExpense] = useState({ company: '', taxId: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
   const [currentItem, setCurrentItem] = useState({ description: '', netPrice: '' });
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Expense" onBack={() => setViewInvoice(null)} />;
@@ -1616,7 +1617,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
     
     setShowAdd(false);
     setEditingId(null);
-    setNewExpense({ company: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
+    setNewExpense({ company: '', taxId: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] });
   };
 
   const handleDelete = async (id) => { if(confirm("Delete this expense?")) await deleteDoc(doc(db, "expenses", id)); }
@@ -1634,11 +1635,12 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
       {showAdd && (
         <div className="bg-white p-8 rounded-2xl shadow-xl border border-orange-100 animate-in fade-in">
           <h3 className="font-bold text-lg mb-6">{editingId ? 'Edit' : 'New'} Expense</h3>
-          <div className="grid grid-cols-4 gap-6 mb-6">
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.invoiceNo} onChange={e => setNewExpense({ ...newExpense, invoiceNo: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Company</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.company} onChange={e => setNewExpense({ ...newExpense, company: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.date} onChange={e => setNewExpense({ ...newExpense, date: e.target.value })} /></div>
-            <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.vatRate} onChange={e => setNewExpense({ ...newExpense, vatRate: e.target.value })} /></div>
+          <div className="grid grid-cols-5 gap-4 mb-6">
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Invoice #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.invoiceNo || ''} onChange={e => setNewExpense({ ...newExpense, invoiceNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Company</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.company || ''} onChange={e => setNewExpense({ ...newExpense, company: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Tax ID / VAT #</label><input className="w-full border p-3 rounded-lg bg-slate-50 mt-1" placeholder="e.g. EL123456789" value={newExpense.taxId || ''} onChange={e => setNewExpense({ ...newExpense, taxId: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">Date</label><input type="date" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.date || ''} onChange={e => setNewExpense({ ...newExpense, date: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase">VAT %</label><input type="number" className="w-full border p-3 rounded-lg bg-slate-50 mt-1" value={newExpense.vatRate || 24} onChange={e => setNewExpense({ ...newExpense, vatRate: e.target.value })} /></div>
           </div>
           
           <div className="bg-orange-50 p-6 rounded-xl mb-6">
@@ -1658,7 +1660,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
           </div>
 
           <div className="flex justify-end gap-3">
-            <button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500">Cancel</button>
+            <button onClick={() => { setShowAdd(false); setEditingId(null); setNewExpense({ company: '', taxId: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, items: [] }); }} className="px-6 py-3 rounded-lg font-bold text-slate-500">Cancel</button>
             <button onClick={saveExpense} className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg">Save</button>
           </div>
         </div>
@@ -1666,16 +1668,28 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
 
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Company</th><th className="p-4">Date</th><th className="p-4 text-right">Net</th><th className="p-4 text-right">VAT</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6"></th></tr></thead>
+          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
+            <tr>
+              <th className="p-4 pl-6">Invoice</th>
+              <th className="p-4">Company</th>
+              <th className="p-4">Tax ID</th>
+              <th className="p-4">Date</th>
+              <th className="p-4 text-right">Net</th>
+              <th className="p-4 text-right">VAT</th>
+              <th className="p-4 text-right">Total</th>
+              <th className="p-4 text-right pr-6"></th>
+            </tr>
+          </thead>
           <tbody className="divide-y divide-slate-100">
             {(expenses||[]).filter(e => e.date >= dateRangeStart && e.date <= dateRangeEnd).map(e => (
               <tr key={e.id} className="hover:bg-slate-50">
                 <td className="p-4 pl-6 font-mono text-slate-600">#{e.invoiceNo}</td>
                 <td className="p-4 font-bold text-slate-800">{e.company}</td>
+                <td className="p-4 font-mono text-xs text-slate-500">{e.taxId || '-'}</td>
                 <td className="p-4 text-slate-500">{e.date}</td>
-                <td className="p-4 text-right">€{e.netPrice.toFixed(2)}</td>
-                <td className="p-4 text-right">€{e.vatAmount.toFixed(2)}</td>
-                <td className="p-4 text-right font-bold text-slate-800">€{e.finalPrice.toFixed(2)}</td>
+                <td className="p-4 text-right">€{(e.netPrice || 0).toFixed(2)}</td>
+                <td className="p-4 text-right">€{(e.vatAmount || 0).toFixed(2)}</td>
+                <td className="p-4 text-right font-bold text-slate-800">€{(e.finalPrice || 0).toFixed(2)}</td>
                 <td className="p-4 text-right pr-6 flex justify-end gap-3">
                   <button onClick={() => setViewInvoice(e)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button>
                   <button onClick={() => { setNewExpense(e); setEditingId(e.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
