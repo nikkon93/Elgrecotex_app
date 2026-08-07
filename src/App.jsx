@@ -14,6 +14,28 @@ import ImportExcelBtn from './components/ImportExcelBtn.jsx';
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
 
+// --- UTILITY: GREEK DATE FORMATTER (DD/MM/YYYY) ---
+const formatGreekDate = (dateStr) => {
+  if (!dateStr) return '-';
+  if (typeof dateStr === 'string' && dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+  }
+  
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  return dateStr;
+};
+
 // --- UTILITY: EXPORT EXCEL ---
 const exportData = (data, filename, format = 'xlsx') => {
   try {
@@ -53,42 +75,18 @@ const downloadPDF = (elementId, filename) => {
 
   const element = document.getElementById(elementId);
   
-  // PDF Settings
   const opt = {
     margin:       10,
     filename:     `${filename}.pdf`,
     image:        { type: 'jpeg', quality: 0.98 },
-    html2canvas:  { scale: 2 }, // High resolution
+    html2canvas:  { scale: 2 },
     jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
-  // Generate and Save (Bypasses "Preparing Preview")
   window.html2pdf().set(opt).from(element).save();
 };
 
-// --- UTILITY: GREEK DATE FORMATTER (DD/MM/YYYY) ---
-const formatGreekDate = (dateStr) => {
-  if (!dateStr) return '-';
-  // Handles YYYY-MM-DD strings
-  if (typeof dateStr === 'string' && dateStr.includes('-')) {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
-      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
-    }
-  }
-  
-  // Handles standard Date objects or timestamps
-  const d = new Date(dateStr);
-  if (!isNaN(d.getTime())) {
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}/${month}/${year}`;
-  }
 
-  return dateStr;
-};
 
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
@@ -222,7 +220,11 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
         </div>
 
         <div className="grid grid-cols-2 gap-12 mb-12">
-            <div><h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bill To</h3><p className="text-xl font-bold text-slate-800">{invoice.customer || invoice.supplier || invoice.company}</p>{invoice.vatNumber && <p className="text-sm text-slate-500 mt-1">VAT: {invoice.vatNumber}</p>}</div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bill To</h3>
+              <p className="text-xl font-bold text-slate-800">{invoice.customer || invoice.supplier || invoice.company}</p>
+              {(invoice.vatNumber || invoice.taxId) && <p className="text-sm text-slate-500 mt-1">VAT/Tax ID: {invoice.vatNumber || invoice.taxId}</p>}
+            </div>
             <div className="text-right">
               {invoice.status && (
                 <>
@@ -293,7 +295,7 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
               <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Sample Packing Slip</h1>
               <p className="text-purple-600 font-bold mt-1">Elgrecotex</p>
             </div>
-            <div className="text-right"><p className="font-mono text-lg text-slate-600">{sampleLog.date}</p><p className="text-slate-400 text-sm mt-1">Sent via: {sampleLog.carrier || 'Standard Post'}</p></div>
+            <div className="text-right"><p className="font-mono text-lg text-slate-600">{formatGreekDate(sampleLog.date)}</p><p className="text-slate-400 text-sm mt-1">Sent via: {sampleLog.carrier || 'Standard Post'}</p></div>
         </div>
         <div className="mb-12 bg-purple-50 p-6 rounded-lg border border-purple-100">
             <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-2">Prepared For</h3>
@@ -384,50 +386,77 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       
       // A. Inventory 
       const inv = fabrics.flatMap(f => (f.rolls || []).map(r => ({ 
-       "Date Added": formatGreekDate(r.dateAdded),
-       "Fabric Code": f.mainCode, "Fabric Name": f.name, "Supplier": f.supplier || '-',
-       "Roll Code": r.subCode || '-', "Meters": parseFloat(r.meters || 0), 
-       "Width": r.width || '-', "Loc": r.location || '-', "Price": parseFloat(r.price || 0)
+        "Date Added": formatGreekDate(r.dateAdded),
+        "Fabric Code": f.mainCode, 
+        "Fabric Name": f.name, 
+        "Supplier": f.supplier || '-',
+        "Roll Code": r.subCode || '-', 
+        "Meters": parseFloat(r.meters || 0), 
+        "Width": r.width || '-', 
+        "Loc": r.location || '-', 
+        "Price": parseFloat(r.price || 0)
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), "Inventory");
 
       // B. Sales 
-      const sal = orders.flatMap(o => (o.items || []).map(i => ({ 
-       "Date": formatGreekDate(o.date), 
-       "Invoice": o.invoiceNo, 
-       "Customer": o.customer, 
-       "Fabric": i.fabricCode, 
-       "Roll Code": i.subCode || '-',
-       "Auto ID": i.rollId || '-',
-       "Qty": i.meters, 
-       "Net Price": i.totalPrice,
-       "Order Status": o.status || 'Pending',
-       "Payment Status": o.paymentStatus || 'Unpaid'
-      })));
+      const sal = orders.flatMap(o => {
+        const orderMetersTotal = (o.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
+        return (o.items || []).map(i => ({ 
+          "Date": formatGreekDate(o.date), 
+          "Invoice": o.invoiceNo, 
+          "Customer": o.customer, 
+          "Fabric": i.fabricCode, 
+          "Roll Code": i.subCode || '-',
+          "Auto ID": i.rollId || '-',
+          "Item Qty": parseFloat(i.meters || 0), 
+          "Total Invoice Meters": parseFloat(orderMetersTotal.toFixed(2)),
+          "Net Price": parseFloat(i.totalPrice || 0),
+          "Order Status": o.status || 'Pending',
+          "Payment Status": o.paymentStatus || 'Unpaid'
+        }));
+      });
+
+      // Grand Total row for Sales
+      const totalSalesMeters = sal.reduce((acc, row) => acc + (parseFloat(row["Item Qty"]) || 0), 0);
+      sal.push({
+        "Date": "TOTAL METERS",
+        "Item Qty": parseFloat(totalSalesMeters.toFixed(2))
+      });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
       // C. Purchases
-      const pur = purchases.flatMap(p => (p.items || []).map(i => ({ 
-       "Date": formatGreekDate(p.date), 
-       "Supplier": p.supplier, 
-       "Invoice": p.invoiceNo, 
-       "Fabric": i.fabricCode, 
-       "Roll Code": i.subCode || '-',
-       "Qty": i.meters, 
-       "Net Price": i.totalPrice 
-      })));
+      const pur = purchases.flatMap(p => {
+        const purchaseMetersTotal = (p.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
+        return (p.items || []).map(i => ({ 
+          "Date": formatGreekDate(p.date), 
+          "Supplier": p.supplier, 
+          "Invoice": p.invoiceNo, 
+          "Fabric": i.fabricCode, 
+          "Roll Code": i.subCode || '-',
+          "Item Qty": parseFloat(i.meters || 0), 
+          "Total Invoice Meters": parseFloat(purchaseMetersTotal.toFixed(2)),
+          "Net Price": parseFloat(i.totalPrice || 0) 
+        }));
+      });
+
+      // Grand Total row for Purchases
+      const totalPurchasedMeters = pur.reduce((acc, row) => acc + (parseFloat(row["Item Qty"]) || 0), 0);
+      pur.push({
+        "Date": "TOTAL METERS",
+        "Item Qty": parseFloat(totalPurchasedMeters.toFixed(2))
+      });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
       // E. Expenses (Deep Logic with Tax ID Support)
       const exp = (expenses || []).map(e => {
         const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
         const finalDesc = e.description || itemDesc || '-';
-        let finalTotal = parseFloat(e.totalAmount || e.amount || 0);
+        let finalTotal = parseFloat(e.totalAmount || e.amount || e.finalPrice || 0);
         if (finalTotal === 0 && Array.isArray(e.items)) {
           finalTotal = e.items.reduce((sum, item) => sum + parseFloat(item.totalPrice || item.total || 0), 0);
         }
         const vat = parseFloat(e.vatAmount || e.vat || 0);
-        let net = parseFloat(e.netAmount || e.net || 0);
+        let net = parseFloat(e.netAmount || e.net || e.netPrice || 0);
         if (net === 0 && finalTotal > 0) net = finalTotal - vat;
 
         return {
@@ -439,13 +468,13 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
           "Net Value": parseFloat(net.toFixed(2)),
           "VAT": parseFloat(vat.toFixed(2)),
           "Total": parseFloat(finalTotal.toFixed(2))
-       };
+        };
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
       // Samples
       const sam = (samples || []).flatMap(s => (s.items || []).map(i => ({ 
-        "Date": s.date, 
+        "Date": formatGreekDate(s.date), 
         "Customer": s.customer, 
         "Fabric": i.fabricCode, 
         "Description": i.description || '-',
@@ -474,12 +503,12 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         </button>
       </div>
 
-      {/* METRIC CARDS - NOW WITH 5 COLUMNS */}
+      {/* METRIC CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" onClick={() => onNavigate('inventory')}/>
         <DashboardCard title="Active Rolls" value={totalActiveRolls} icon={Tag} color="purple" onClick={() => onNavigate('inventory')}/>
-        <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('sales')}/>
-        <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('sales')}/>
+        <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('salesinvoices')}/>
+        <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('salesinvoices')}/>
         <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color={netProfit >= 0 ? "emerald" : "red"} onClick={() => onNavigate('dashboard')}/>
       </div>
 
@@ -510,7 +539,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       <div className="bg-white p-6 rounded-2xl border shadow-sm">
          <h3 className="font-bold text-slate-800 mb-4">Quick Actions</h3>
          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button onClick={() => onNavigate('sales')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Invoice & Stock</div></button>
+            <button onClick={() => onNavigate('salesinvoices')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Invoice & Stock</div></button>
             <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add Stock</div></button>
             <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Stock Status</div><div className="text-xs text-slate-400">View Rolls</div></button>
             <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Samples</div><div className="text-xs text-slate-400">Log Shipments</div></button>
