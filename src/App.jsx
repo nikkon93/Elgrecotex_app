@@ -978,7 +978,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.53: Added Total Meters Summary Badge & Greek Date) ---
+// --- UPDATED SALES INVOICES (with Per-Invoice Meters Column) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1156,8 +1156,8 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     return matchesDate && matchesSearch;
   });
 
-  // TOTAL METERS CALCULATION ACROSS ALL FILTERED INVOICES
-  const totalSalesMeters = filteredOrders.reduce((total, order) => {
+  // GRAND TOTAL METERS (ACROSS ALL FILTERED INVOICES)
+  const grandTotalSalesMeters = filteredOrders.reduce((total, order) => {
     const orderMeters = (order.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
     return total + orderMeters;
   }, 0);
@@ -1190,12 +1190,12 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
       )}
 
-      {/* TOTAL METERS SUMMARY BADGE */}
+      {/* GRAND TOTAL METERS BADGE */}
       {!showAdd && (
         <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
-          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Sales Volume</span>
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Volume (Filtered Invoices)</span>
           <span className="text-xl font-extrabold text-blue-600 bg-blue-50 px-4 py-1.5 rounded-lg border border-blue-100">
-            {totalSalesMeters.toFixed(2)} m
+            {grandTotalSalesMeters.toFixed(2)} m
           </span>
         </div>
       )}
@@ -1302,57 +1302,66 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
               <th className="p-4">Invoice</th>
               <th className="p-4">Customer</th>
               <th className="p-4">Date</th>
-              <th className="p-4 text-right">Total</th>
+              <th className="p-4 text-right">Meters Sold</th>
+              <th className="p-4 text-right">Total Price</th>
               <th className="p-4 text-center">Status</th>
               <th className="p-4 text-center">Payment</th>
               <th className="p-4 text-right pr-6">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredOrders.map(order => (
-              <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId || '-'}</td>
-                <td className="p-4 font-bold text-slate-800">{order.invoiceNo}</td>
-                <td className="p-4 font-bold text-slate-800">{order.customer}</td>
-                <td className="p-4 text-slate-500">{formatGreekDate(order.date)}</td>
-                <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(order.finalPrice)||0).toFixed(2)}</td>
-                <td className="p-4 text-center">
-                    {order.status === 'Completed' ? (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Completed</span>
-                    ) : (
-                        <select 
-                            value={order.status} 
-                            onChange={(e) => updateStatus(order.id, e.target.value)}
-                            className={`px-2 py-1 rounded text-xs font-bold border ${order.status === 'Cancelled' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
-                        >
-                            <option value="Pending">Pending</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Cancelled">Cancelled</option>
-                        </select>
-                    )}
-                </td>
-                <td className="p-4 text-center">
-                  <button 
-                    onClick={() => togglePayment(order)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                      order.paymentStatus === 'Paid' 
-                        ? 'bg-blue-600 text-white shadow-sm' 
-                        : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
-                    }`}
-                  >
-                    {order.paymentStatus || 'Unpaid'}
-                  </button>
-                </td>
-                <td className="p-4 text-right pr-6 flex justify-end gap-3">
-                  <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View"><Eye size={18}/></button>
-                  <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
-                  <button onClick={() => deleteOrder(order.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
-                </td>
-              </tr>
-            ))}
+            {filteredOrders.map(order => {
+              // CALCULATE TOTAL METERS FOR THIS SPECIFIC INVOICE
+              const invoiceMetersSum = (order.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
+
+              return (
+                <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId || '-'}</td>
+                  <td className="p-4 font-bold text-slate-800">{order.invoiceNo}</td>
+                  <td className="p-4 font-bold text-slate-800">{order.customer}</td>
+                  <td className="p-4 text-slate-500">{formatGreekDate(order.date)}</td>
+                  <td className="p-4 text-right font-mono font-bold text-blue-600">
+                    {invoiceMetersSum.toFixed(2)} m
+                  </td>
+                  <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(order.finalPrice)||0).toFixed(2)}</td>
+                  <td className="p-4 text-center">
+                      {order.status === 'Completed' ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Completed</span>
+                      ) : (
+                          <select 
+                              value={order.status} 
+                              onChange={(e) => updateStatus(order.id, e.target.value)}
+                              className={`px-2 py-1 rounded text-xs font-bold border ${order.status === 'Cancelled' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
+                          >
+                              <option value="Pending">Pending</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Cancelled">Cancelled</option>
+                          </select>
+                      )}
+                  </td>
+                  <td className="p-4 text-center">
+                    <button 
+                      onClick={() => togglePayment(order)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                        order.paymentStatus === 'Paid' 
+                          ? 'bg-blue-600 text-white shadow-sm' 
+                          : 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                      }`}
+                    >
+                      {order.paymentStatus || 'Unpaid'}
+                    </button>
+                  </td>
+                  <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                    <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View"><Eye size={18}/></button>
+                    <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
+                    <button onClick={() => deleteOrder(order.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
+                  </td>
+                </tr>
+              );
+            })}
             {filteredOrders.length === 0 && (
               <tr>
-                <td colSpan="8" className="p-8 text-center text-slate-400 italic">No invoices found matching your search.</td>
+                <td colSpan="9" className="p-8 text-center text-slate-400 italic">No invoices found matching your search.</td>
               </tr>
             )}
           </tbody>
@@ -1361,7 +1370,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
-// --- UPDATED PURCHASES COMPONENT (v5.53: Crash-Proof + Excel Import + Total Meters Summary) ---
+// --- UPDATED PURCHASES COMPONENT (with Per-Invoice Meters Column) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1528,8 +1537,8 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
   // FILTER PURCHASES BY DATE RANGE
   const filteredPurchasesList = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
 
-  // TOTAL METERS CALCULATION ACROSS ALL FILTERED PURCHASES
-  const totalPurchasedMeters = filteredPurchasesList.reduce((total, purchase) => {
+  // GRAND TOTAL METERS (ACROSS ALL FILTERED PURCHASES)
+  const grandTotalPurchasedMeters = filteredPurchasesList.reduce((total, purchase) => {
     const purchaseMeters = (purchase.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
     return total + purchaseMeters;
   }, 0);
@@ -1553,12 +1562,12 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
           </div>
        </div>
 
-       {/* TOTAL METERS SUMMARY BADGE */}
+       {/* GRAND TOTAL METERS BADGE */}
        {!showAdd && (
          <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
-           <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Purchased Volume</span>
+           <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Volume (Filtered Invoices)</span>
            <span className="text-xl font-extrabold text-emerald-600 bg-emerald-50 px-4 py-1.5 rounded-lg border border-emerald-100">
-             {totalPurchasedMeters.toFixed(2)} m
+             {grandTotalPurchasedMeters.toFixed(2)} m
            </span>
          </div>
        )}
@@ -1631,23 +1640,45 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
           <table className="w-full text-sm text-left">
-             <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Supplier</th><th className="p-4">Date</th><th className="p-4 text-center">Items</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
+             <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
+               <tr>
+                 <th className="p-4 pl-6">Invoice</th>
+                 <th className="p-4">Supplier</th>
+                 <th className="p-4">Date</th>
+                 <th className="p-4 text-center">Items</th>
+                 <th className="p-4 text-right">Meters Purchased</th>
+                 <th className="p-4 text-right">Total Price</th>
+                 <th className="p-4 text-right pr-6">Action</th>
+               </tr>
+             </thead>
              <tbody className="divide-y divide-slate-100">
-                {filteredPurchasesList.map(p => (
-                   <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td>
-                      <td className="p-4 font-bold text-slate-800">{p.supplier || '-'}</td>
-                      <td className="p-4 text-slate-500">{formatGreekDate(p.date)}</td>
-                      <td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{(p.items||[]).length}</span></td>
-                      <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(p.finalPrice)||0).toFixed(2)}</td>
-                      <td className="p-4 text-right pr-6 flex justify-end gap-3"><button onClick={() => setViewInvoice(p)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button><button onClick={() => { setNewPurchase(p); setEditingId(p.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button><button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button></td>
-                   </tr>
-                ))}
+                {filteredPurchasesList.map(p => {
+                   // CALCULATE TOTAL METERS FOR THIS SPECIFIC PURCHASE INVOICE
+                   const purchaseMetersSum = (p.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
+
+                   return (
+                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td>
+                        <td className="p-4 font-bold text-slate-800">{p.supplier || '-'}</td>
+                        <td className="p-4 text-slate-500">{formatGreekDate(p.date)}</td>
+                        <td className="p-4 text-center"><span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-bold">{(p.items||[]).length}</span></td>
+                        <td className="p-4 text-right font-mono font-bold text-emerald-600">
+                          {purchaseMetersSum.toFixed(2)} m
+                        </td>
+                        <td className="p-4 text-right font-bold text-slate-800">€{(parseFloat(p.finalPrice)||0).toFixed(2)}</td>
+                        <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                          <button onClick={() => setViewInvoice(p)} className="text-blue-500 hover:text-blue-700"><Eye size={18}/></button>
+                          <button onClick={() => { setNewPurchase(p); setEditingId(p.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
+                          <button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
+                        </td>
+                     </tr>
+                   );
+                })}
              </tbody>
           </table>
        </div>
     </div>
-  )
+  );
 };
 // --- UPDATED EXPENSES: MULTI-ITEM SUPPORT + TAX ID ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
