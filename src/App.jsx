@@ -978,12 +978,12 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (v5.52: Added Client/Invoice Search Field) ---
+// --- UPDATED SALES INVOICES (v5.53: Added Total Meters Summary Badge & Greek Date) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
-  const [searchTerm, setSearchTerm] = useState(''); // SEARCH STATE ADDED
+  const [searchTerm, setSearchTerm] = useState('');
   const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] });
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
@@ -1156,6 +1156,12 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     return matchesDate && matchesSearch;
   });
 
+  // TOTAL METERS CALCULATION ACROSS ALL FILTERED INVOICES
+  const totalSalesMeters = filteredOrders.reduce((total, order) => {
+    const orderMeters = (order.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
+    return total + orderMeters;
+  }, 0);
+
   return (
     <div className="space-y-6">
       <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
@@ -1168,7 +1174,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         <button onClick={handleNewInvoice} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"><Plus size={20}/> New Invoice</button>
       </div>
 
-      {/* NEW SEARCH BAR */}
+      {/* SEARCH BAR */}
       {!showAdd && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
             <Search className="text-slate-400" size={20}/>
@@ -1181,6 +1187,16 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             {searchTerm && (
               <button onClick={() => setSearchTerm('')} className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1 bg-slate-100 rounded-md">Clear</button>
             )}
+        </div>
+      )}
+
+      {/* TOTAL METERS SUMMARY BADGE */}
+      {!showAdd && (
+        <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+          <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Sales Volume</span>
+          <span className="text-xl font-extrabold text-blue-600 bg-blue-50 px-4 py-1.5 rounded-lg border border-blue-100">
+            {totalSalesMeters.toFixed(2)} m
+          </span>
         </div>
       )}
 
@@ -1345,7 +1361,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
-// --- UPDATED PURCHASES COMPONENT (v5.48: Crash-Proof + Excel Import) ---
+// --- UPDATED PURCHASES COMPONENT (v5.53: Crash-Proof + Excel Import + Total Meters Summary) ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1509,6 +1525,15 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   const handleDelete = async (id) => { if(confirm("Delete this purchase?")) await deleteDoc(doc(db, "purchases", id)); }
 
+  // FILTER PURCHASES BY DATE RANGE
+  const filteredPurchasesList = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
+
+  // TOTAL METERS CALCULATION ACROSS ALL FILTERED PURCHASES
+  const totalPurchasedMeters = filteredPurchasesList.reduce((total, purchase) => {
+    const purchaseMeters = (purchase.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
+    return total + purchaseMeters;
+  }, 0);
+
   return (
     <div className="space-y-6">
        <input type="file" accept=".xlsx, .xls, .csv" ref={fileInputRef} style={{display: 'none'}} onChange={handleFileUpload} />
@@ -1527,6 +1552,16 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
              </button>
           </div>
        </div>
+
+       {/* TOTAL METERS SUMMARY BADGE */}
+       {!showAdd && (
+         <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+           <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Purchased Volume</span>
+           <span className="text-xl font-extrabold text-emerald-600 bg-emerald-50 px-4 py-1.5 rounded-lg border border-emerald-100">
+             {totalPurchasedMeters.toFixed(2)} m
+           </span>
+         </div>
+       )}
 
        {showAdd && (
          <div className="bg-white p-8 rounded-2xl shadow-xl border border-emerald-100 animate-in fade-in">
@@ -1598,7 +1633,7 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
           <table className="w-full text-sm text-left">
              <thead className="bg-slate-50 text-slate-500 uppercase font-semibold"><tr><th className="p-4 pl-6">Invoice</th><th className="p-4">Supplier</th><th className="p-4">Date</th><th className="p-4 text-center">Items</th><th className="p-4 text-right">Total</th><th className="p-4 text-right pr-6">Action</th></tr></thead>
              <tbody className="divide-y divide-slate-100">
-                {(purchases||[]).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd).map(p => (
+                {filteredPurchasesList.map(p => (
                    <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4 pl-6 font-mono text-slate-600">#{p.invoiceNo}</td>
                       <td className="p-4 font-bold text-slate-800">{p.supplier || '-'}</td>
