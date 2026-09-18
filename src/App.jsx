@@ -943,7 +943,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 };
 // --- HELPER COMPONENT: SEARCHABLE DROPDOWN ---
 const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled = false }) => {
-  const [isOpen, React.useState] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const wrapperRef = React.useRef(null);
 
