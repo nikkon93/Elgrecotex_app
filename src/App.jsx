@@ -412,7 +412,8 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
           "Total Invoice Meters": parseFloat(orderMetersTotal.toFixed(2)),
           "Net Price": parseFloat(i.totalPrice || 0),
           "Order Status": o.status || 'Pending',
-          "Payment Status": o.paymentStatus || 'Unpaid'
+          "Payment Status": o.paymentStatus || 'Unpaid',
+          "COD": o.isCOD ? "Yes" : "No"
         }));
       });
 
@@ -859,7 +860,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
                   
                   {fabric.link && (
                     <a href={fabric.link.startsWith('http') ? fabric.link : `https://${fabric.link}`} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:text-blue-700 font-medium mt-1 inline-block bg-blue-50 px-2 py-1 rounded border border-blue-100">
-                       🔗 View Link
+                        🔗 View Link
                     </a>
                   )}
 
@@ -942,8 +943,8 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
 };
 // --- HELPER COMPONENT: SEARCHABLE DROPDOWN ---
 const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled = false }) => {
-  const [isOpen, setIsOpen] = React.useState(false);
-  const [search, setSearch] = React.useState('');
+  const [isOpen, React.useState] = useState(false);
+  const [search, setSearch] = useState('');
   const wrapperRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -1007,13 +1008,13 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (with Per-Invoice Meters Column) ---
+// --- UPDATED SALES INVOICES (with COD and Per-Invoice Meters Column) ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] });
+  const [newOrder, setNewOrder] = useState({ customer: '', invoiceNo: '', orderId: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', isCOD: false, items: [] });
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', meters: '', pricePerMeter: '' });
   
@@ -1025,7 +1026,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const handleNewInvoice = () => { 
       setNewOrder({ 
           customer: '', invoiceNo: '', orderId: generateOrderId(), 
-          date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] 
+          date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', isCOD: false, items: [] 
       }); 
       setEditingId(null); 
       setShowAdd(true); 
@@ -1034,6 +1035,10 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const togglePayment = async (order) => {
     const nextPaymentStatus = order.paymentStatus === 'Paid' ? 'Unpaid' : 'Paid';
     await updateDoc(doc(db, "orders", order.id), { paymentStatus: nextPaymentStatus });
+  };
+
+  const toggleCOD = async (order) => {
+    await updateDoc(doc(db, "orders", order.id), { isCOD: !order.isCOD });
   };
 
   const handleFileUpload = (e) => {
@@ -1160,7 +1165,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     } 
     setShowAdd(false); 
     setEditingId(null); 
-    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', items: [] }); 
+    setNewOrder({ customer: '', invoiceNo: '', date: new Date().toISOString().split('T')[0], vatRate: 24, status: 'Pending', paymentStatus: 'Unpaid', isCOD: false, items: [] }); 
   };
 
   const updateStatus = async (id, newStatus) => { 
@@ -1242,7 +1247,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
              <span className="font-mono text-sm text-blue-600">{newOrder.orderId || 'Auto-generated on save'}</span>
           </div>
 
-          <div className="grid grid-cols-5 gap-6 mb-8 items-end">
+          <div className="grid grid-cols-6 gap-6 mb-8 items-end">
             <div className="col-span-2">
               <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Customer</label>
               <SearchableSelect 
@@ -1255,6 +1260,10 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Invoice #</label><input className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.invoiceNo} onChange={e => setNewOrder({ ...newOrder, invoiceNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Date</label><input type="date" className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
             <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Status</label><select className="w-full border border-slate-300 shadow-sm p-3 rounded-lg bg-white font-bold text-blue-800" value={newOrder.status} onChange={e => setNewOrder({ ...newOrder, status: e.target.value })}><option value="Pending">Pending</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></div>
+            <div className="flex items-center gap-2 pb-3 pl-2">
+              <input type="checkbox" id="isCOD" checked={newOrder.isCOD || false} onChange={e => setNewOrder({ ...newOrder, isCOD: e.target.checked })} className="w-6 h-6 cursor-pointer accent-blue-600 rounded" />
+              <label htmlFor="isCOD" className="text-sm font-bold text-slate-700 cursor-pointer">COD</label>
+            </div>
           </div>
           
           <div className="bg-blue-50 p-6 rounded-xl mb-6">
@@ -1335,6 +1344,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
               <th className="p-4 text-right">Total Price</th>
               <th className="p-4 text-center">Status</th>
               <th className="p-4 text-center">Payment</th>
+              <th className="p-4 text-center">COD</th>
               <th className="p-4 text-right pr-6">Action</th>
             </tr>
           </thead>
@@ -1380,6 +1390,15 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
                       {order.paymentStatus || 'Unpaid'}
                     </button>
                   </td>
+                  <td className="p-4 text-center">
+                    <input 
+                      type="checkbox" 
+                      checked={order.isCOD || false} 
+                      onChange={() => toggleCOD(order)} 
+                      className="w-5 h-5 cursor-pointer accent-blue-600 rounded" 
+                      title="Toggle Cash on Delivery"
+                    />
+                  </td>
                   <td className="p-4 text-right pr-6 flex justify-end gap-3">
                     <button onClick={() => setViewInvoice(order)} className="text-blue-500 hover:text-blue-700" title="View"><Eye size={18}/></button>
                     <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-blue-600"><Pencil size={18}/></button>
@@ -1390,7 +1409,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
             })}
             {filteredOrders.length === 0 && (
               <tr>
-                <td colSpan="9" className="p-8 text-center text-slate-400 italic">No invoices found matching your search.</td>
+                <td colSpan="10" className="p-8 text-center text-slate-400 italic">No invoices found matching your search.</td>
               </tr>
             )}
           </tbody>
