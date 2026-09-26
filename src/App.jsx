@@ -307,6 +307,89 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
   );
 };
 
+// --- NEW ORDER PDF VIEWER ---
+const OrderViewer = ({ order, onBack }) => {
+  const pdfName = `Order_Request_${order.orderId}`;
+
+  return (
+    <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
+      <div className="w-full max-w-4xl mb-6 flex justify-between items-center print:hidden">
+          <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Orders</button>
+          <button onClick={() => downloadPDF('printable-order', pdfName)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-indigo-700 flex items-center gap-2 animate-bounce">
+            <FileDown size={18}/> Download PDF
+          </button>
+      </div>
+
+      <div id="printable-order" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
+        <div className="flex justify-between items-start mb-12 border-b pb-8">
+            <div>
+              <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
+              <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Order Request</h1>
+              <p className="text-indigo-600 font-bold mt-1">Elgrecotex</p>
+            </div>
+            <div className="text-right">
+              <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">ORDER</h2>
+              <p className="text-slate-500 font-mono mt-1 text-lg">{order.orderId}</p>
+              <p className="text-slate-500 text-sm mt-1">{formatGreekDate(order.date)}</p>
+            </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-12 mb-12">
+            <div>
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Requested By</h3>
+              <p className="text-xl font-bold text-slate-800">{order.customer}</p>
+              {order.notes && <p className="text-sm text-indigo-700 mt-2 bg-indigo-50 p-2 rounded inline-block">📝 {order.notes}</p>}
+            </div>
+            <div className="text-right">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Overall Status</h3>
+              <span className={`px-4 py-1 rounded-full text-sm font-bold border ${
+                  order.overallStatus === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  order.overallStatus === 'Partial' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                  'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                  {order.overallStatus || 'Pending'}
+              </span>
+            </div>
+        </div>
+
+        <div className="border rounded-lg overflow-hidden mb-12">
+            <table className="w-full">
+               <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                   <tr>
+                       <th className="text-left py-4 px-4 font-bold">Fabric Code</th>
+                       <th className="text-left py-4 px-4 font-bold">Roll / Color</th>
+                       <th className="text-right py-4 px-4 font-bold">Requested Qty</th>
+                       <th className="text-center py-4 px-4 font-bold">Item Status</th>
+                   </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-100">
+                  {(order.items || []).map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="py-4 px-4 font-bold text-slate-700">{item.fabricCode}</td>
+                        <td className="py-4 px-4 text-slate-600">
+                            <span className="font-mono text-blue-600 text-xs mr-2">{item.subCode || item.rollCode || '-'}</span>
+                            {item.rollColor && <span>({item.rollColor})</span>}
+                        </td>
+                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">{item.requestedMeters}m</td>
+                        <td className="py-4 px-4 text-center">
+                           <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold border ${
+                              item.status === 'Fulfilled' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              item.status === 'Unavailable' ? 'bg-red-50 text-red-700 border-red-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
+                            }`}>
+                              {item.status || 'Pending'}
+                            </span>
+                        </td>
+                      </tr>
+                  ))}
+               </tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- HELPER: DASHBOARD CARD ---
 const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) => {
   const colors = { 
@@ -1400,10 +1483,11 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- CUSTOMER ORDERS (WITHOUT PRICING, WITH PARTIAL FULFILLMENT) ---
+// --- CUSTOMER ORDERS (WITHOUT PRICING, WITH PARTIAL FULFILLMENT & PDF) ---
 const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [viewOrder, setViewOrder] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [newOrder, setNewOrder] = useState({ 
@@ -1414,15 +1498,26 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
     items: [] 
   });
   
-  const [item, setItem] = useState({ fabricCode: '', requestedMeters: '', status: 'Pending' });
+  const [item, setItem] = useState({ fabricCode: '', rollId: '', requestedMeters: '', status: 'Pending' });
+  const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
+
+  if (viewOrder) return <OrderViewer order={viewOrder} onBack={() => setViewOrder(null)} />;
 
   const addItem = () => {
-    if (item.fabricCode && item.requestedMeters) {
+    if (item.fabricCode && item.rollId && item.requestedMeters) {
+      const roll = selectedFabric?.rolls?.find(r => String(r.rollId) === String(item.rollId)); 
+      
       setNewOrder({
         ...newOrder,
-        items: [...(newOrder.items || []), { ...item }]
+        items: [...(newOrder.items || []), { 
+            ...item, 
+            subCode: roll ? roll.subCode : '', 
+            rollColor: roll ? roll.rollColor : '' 
+        }]
       });
-      setItem({ fabricCode: '', requestedMeters: '', status: 'Pending' });
+      setItem({ fabricCode: '', rollId: '', requestedMeters: '', status: 'Pending' });
+    } else {
+        alert("Please select a fabric, roll, and meters.");
     }
   };
 
@@ -1523,10 +1618,25 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
                   <SearchableSelect 
                     options={fabrics.map(f => ({ value: f.mainCode, label: `${f.mainCode} - ${f.name}` }))}
                     value={item.fabricCode}
-                    onChange={(val) => setItem({ ...item, fabricCode: val })}
+                    onChange={(val) => setItem({ ...item, fabricCode: val, rollId: '' })}
                     placeholder="Select Fabric..."
                   />
               </div>
+
+              <div className="flex-1">
+                  <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Roll ID / Color</label>
+                  <SearchableSelect 
+                    options={(selectedFabric?.rolls || []).map(r => ({ 
+                      value: r.rollId, 
+                      label: `${r.subCode} | ${r.rollColor || '-'} | ${(parseFloat(r.meters)||0).toFixed(2)}m` 
+                    }))}
+                    value={item.rollId}
+                    onChange={(val) => setItem({ ...item, rollId: val })}
+                    placeholder="Select Color/Roll..."
+                    disabled={!item.fabricCode}
+                  />
+              </div>
+
               <div className="w-32"><label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label><input type="number" placeholder="Qty" className="border p-3 rounded-lg w-full bg-white font-bold" value={item.requestedMeters} onChange={e => setItem({ ...item, requestedMeters: e.target.value })} /></div>
               <button onClick={addItem} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-indigo-700 h-[50px]">Add</button>
             </div>
@@ -1534,11 +1644,15 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
             {(newOrder.items || []).length > 0 && (
                 <div className="bg-white rounded-lg border overflow-hidden">
                     <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3 pl-4">Fabric</th><th className="text-right p-3">Meters Req.</th><th className="text-center p-3">Item Status</th><th className="text-right p-3 pr-4"></th></tr></thead>
+                        <thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3 pl-4">Fabric</th><th className="text-left p-3">Roll/Color</th><th className="text-right p-3">Meters Req.</th><th className="text-center p-3">Item Status</th><th className="text-right p-3 pr-4"></th></tr></thead>
                         <tbody>
                             {(newOrder.items || []).map((i, idx) => (
                                 <tr key={idx} className="border-t">
                                     <td className="p-3 pl-4 font-bold text-slate-700">{i.fabricCode}</td>
+                                    <td className="p-3 text-slate-600 font-medium">
+                                        <span className="text-blue-600">{i.subCode}</span>
+                                        {i.rollColor && <span className="ml-2 text-slate-400">({i.rollColor})</span>}
+                                    </td>
                                     <td className="p-3 text-right font-mono font-bold text-slate-600">{i.requestedMeters}m</td>
                                     <td className="p-3 text-center">
                                       <button 
@@ -1599,6 +1713,7 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
                       </span>
                   </td>
                   <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                    <button onClick={() => setViewOrder(order)} className="text-blue-500 hover:text-blue-700" title="View PDF"><Eye size={18}/></button>
                     <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-indigo-600"><Pencil size={18}/></button>
                     <button onClick={() => deleteOrder(order.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
                   </td>
@@ -2358,7 +2473,6 @@ const CalendarTab = ({ onBack }) => {
     </div>
   );
 };
-
 
 // --- MAIN APP COMPONENT ---
 const FabricERP = () => {
