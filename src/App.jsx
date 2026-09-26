@@ -127,7 +127,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.12 Orders Added</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.13 Dashboard Updates</p>
       </div>
     </div>
   );
@@ -397,7 +397,8 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
     emerald: "bg-emerald-50 text-emerald-600 border-emerald-100", 
     purple: "bg-purple-50 text-purple-600 border-purple-100", 
     amber: "bg-amber-50 text-amber-600 border-amber-100",
-    red: "bg-red-50 text-red-600 border-red-100"
+    red: "bg-red-50 text-red-600 border-red-100",
+    indigo: "bg-indigo-50 text-indigo-600 border-indigo-100"
   };
   return (
     <div onClick={onClick} className={`bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer group`}>
@@ -437,9 +438,12 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   
   const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice || e.amount) || 0), 0);
   const netProfit = totalRevenue - (netPurchases + netExpenses);
-  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+  
+  // 3. UPDATED PENDING LOGIC
+  const pendingInvoices = orders.filter(o => o.status === 'Pending').length;
+  const pendingCustomerOrders = (customerOrders || []).filter(o => o.overallStatus === 'Pending' || o.overallStatus === 'Partial').length;
 
-  // 3. EXPORT FUNCTION
+  // 4. EXPORT FUNCTION
   const handleFullExport = () => {
     try {
       const wb = XLSX.utils.book_new();
@@ -573,12 +577,18 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
         </button>
       </div>
 
-      {/* METRIC CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+      {/* METRIC CARDS - UPDATED GRID FOR 6 CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
         <DashboardCard title="Stock Meters" value={`${totalStockMeters.toFixed(1)}m`} icon={Package} color="blue" onClick={() => onNavigate('inventory')}/>
         <DashboardCard title="Active Rolls" value={totalActiveRolls} icon={Tag} color="purple" onClick={() => onNavigate('inventory')}/>
         <DashboardCard title="Net Revenue" value={`€${totalRevenue.toFixed(2)}`} icon={TrendingUp} color="emerald" onClick={() => onNavigate('salesinvoices')}/>
-        <DashboardCard title="Pending Orders" value={pendingOrders} icon={Hash} color="amber" onClick={() => onNavigate('salesinvoices')}/>
+        
+        {/* RENAMED AND UPDATED */}
+        <DashboardCard title="Pending Invoices" value={pendingInvoices} icon={Hash} color="amber" onClick={() => onNavigate('salesinvoices')}/>
+        
+        {/* NEW CARD FOR CUSTOMER ORDERS */}
+        <DashboardCard title="Pending Orders" value={pendingCustomerOrders} icon={ClipboardList} color="indigo" onClick={() => onNavigate('customerorders')}/>
+        
         <DashboardCard title="Net Profit" value={`€${netProfit.toFixed(2)}`} icon={Wallet} color={netProfit >= 0 ? "emerald" : "red"} onClick={() => onNavigate('dashboard')}/>
       </div>
 
@@ -2474,6 +2484,7 @@ const CalendarTab = ({ onBack }) => {
   );
 };
 
+
 // --- MAIN APP COMPONENT ---
 const FabricERP = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -2534,7 +2545,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.12</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.13</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
