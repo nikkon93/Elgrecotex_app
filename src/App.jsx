@@ -5,11 +5,10 @@ import {
   Package, Users, FileText, BarChart3, Plus, Trash2, Search, Eye, 
   DollarSign, Download, Upload, ArrowLeft, Printer, X, Save, 
   Image as ImageIcon, Home, Pencil, Lock, Tag, Menu, LogOut, ChevronRight, ChevronLeft, Hash, FileDown,
-  FileSpreadsheet, Euro, TrendingUp, Wallet, Calendar
+  FileSpreadsheet, Euro, TrendingUp, Wallet, Calendar, ClipboardList
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
-
 
 // --- 🔐 SECURITY SETTINGS ---
 const APP_PASSWORD = "elgreco!2026@"; 
@@ -86,8 +85,6 @@ const downloadPDF = (elementId, filename) => {
   window.html2pdf().set(opt).from(element).save();
 };
 
-
-
 // --- 2. LOGIN SCREEN ---
 const LoginScreen = ({ onLogin }) => {
   const [input, setInput] = useState('');
@@ -130,7 +127,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.11 Fixed Stock Deduction</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.12 Orders Added</p>
       </div>
     </div>
   );
@@ -158,25 +155,6 @@ const calculateWeightedAverageCost = (mainCode, purchases = [], fabrics = []) =>
   return totalMeters > 0 ? totalValue / totalMeters : 0;
 };
 
-const getSubcodesSummary = (rolls) => {
-  const summary = {};
-  if (!rolls) return [];
-
-  rolls.forEach(r => {
-    if (!summary[r.subCode]) {
-        summary[r.subCode] = { meters: 0, count: 0 };
-    }
-    summary[r.subCode].meters += parseFloat(r.meters || 0);
-    summary[r.subCode].count += 1;
-  });
-
-  return Object.entries(summary).map(([subCode, data]) => ({
-    subCode,
-    meters: data.meters,
-    count: data.count
-  }));
-};
-
 const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   let total = 0;
   if (!Array.isArray(fabrics)) return 0;
@@ -189,8 +167,7 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
   return total;
 };
 
-
-
+// --- INVOICE VIEWERS ---
 const InvoiceViewer = ({ invoice, type, onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   const pdfName = `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
@@ -354,7 +331,7 @@ const DashboardCard = ({ title, value, subValue, icon: Icon, color, onClick }) =
 };
 
 // --- MAIN DASHBOARD ---
-const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
+const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], samples = [], suppliers = [], customers = [], customerOrders = [], dateRangeStart, dateRangeEnd, onNavigate }) => {
   
   // 1. FILTER DATA BY DATE
   const filteredPurchases = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
@@ -416,13 +393,8 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
           "COD": o.isCOD ? "Yes" : "No"
         }));
       });
-
-      // Grand Total row for Sales
       const totalSalesMeters = sal.reduce((acc, row) => acc + (parseFloat(row["Item Qty"]) || 0), 0);
-      sal.push({
-        "Date": "TOTAL METERS",
-        "Item Qty": parseFloat(totalSalesMeters.toFixed(2))
-      });
+      sal.push({ "Date": "TOTAL METERS", "Item Qty": parseFloat(totalSalesMeters.toFixed(2)) });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sal), "Sales");
 
       // C. Purchases
@@ -439,16 +411,11 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
           "Net Price": parseFloat(i.totalPrice || 0) 
         }));
       });
-
-      // Grand Total row for Purchases
       const totalPurchasedMeters = pur.reduce((acc, row) => acc + (parseFloat(row["Item Qty"]) || 0), 0);
-      pur.push({
-        "Date": "TOTAL METERS",
-        "Item Qty": parseFloat(totalPurchasedMeters.toFixed(2))
-      });
+      pur.push({ "Date": "TOTAL METERS", "Item Qty": parseFloat(totalPurchasedMeters.toFixed(2)) });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pur), "Purchases");
 
-      // E. Expenses (Deep Logic with Tax ID Support)
+      // D. Expenses
       const exp = (expenses || []).map(e => {
         const itemDesc = Array.isArray(e.items) ? e.items.map(i => i.description).join(", ") : "";
         const finalDesc = e.description || itemDesc || '-';
@@ -473,7 +440,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp), "Expenses");
 
-      // Samples
+      // E. Samples
       const sam = (samples || []).flatMap(s => (s.items || []).map(i => ({ 
         "Date": formatGreekDate(s.date), 
         "Customer": s.customer, 
@@ -484,6 +451,25 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       })));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sam), "Samples");
 
+      // F. Customer Orders (NEW SECTION)
+      const custOrdExp = (customerOrders || []).flatMap(o => {
+        if (!o.items || o.items.length === 0) {
+            return [{ "Date": formatGreekDate(o.date), "Order ID": o.orderId, "Customer": o.customer, "Overall Status": o.overallStatus || 'Empty', "Notes": o.notes || '-', "Fabric": "-", "Meters Req": 0, "Item Status": "-" }];
+        }
+        return (o.items || []).map(i => ({ 
+          "Date": formatGreekDate(o.date), 
+          "Order ID": o.orderId,
+          "Customer": o.customer, 
+          "Overall Status": o.overallStatus || 'Pending',
+          "Notes": o.notes || '-',
+          "Fabric Code": i.fabricCode || '-', 
+          "Meters Req": parseFloat(i.requestedMeters || 0),
+          "Item Status": i.status || 'Pending'
+        }));
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(custOrdExp), "Customer_Orders");
+
+      // Directories
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(suppliers || []), "Suppliers");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(customers || []), "Customers");
 
@@ -542,15 +528,15 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <button onClick={() => onNavigate('salesinvoices')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-blue-600 mb-1">New Sale</div><div className="text-xs text-slate-400">Invoice & Stock</div></button>
             <button onClick={() => onNavigate('purchases')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-emerald-600 mb-1">New Purchase</div><div className="text-xs text-slate-400">Add Stock</div></button>
-            <button onClick={() => onNavigate('inventory')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">Stock Status</div><div className="text-xs text-slate-400">View Rolls</div></button>
+            <button onClick={() => onNavigate('customerorders')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-indigo-600 mb-1">New Order</div><div className="text-xs text-slate-400">Track Fulfillment</div></button>
             <button onClick={() => onNavigate('samples')} className="p-4 border rounded-xl hover:bg-slate-50 text-left transition-colors"><div className="font-bold text-purple-600 mb-1">Samples</div><div className="text-xs text-slate-400">Log Shipments</div></button>
          </div>
       </div>
     </div>
   );
 };
-// --- 5. UNKILLABLE INVENTORY ---
 
+// --- HELPER COMPONENT: HIGHLIGHT TEXT ---
 const HighlightText = ({ text, highlight }) => {
   const strText = String(text || '');
   const strHighlight = String(highlight || '').trim();
@@ -941,6 +927,7 @@ const InventoryTab = ({ fabrics = [], purchases = [], suppliers = [], onBack }) 
     </div>
   );
 };
+
 // --- HELPER COMPONENT: SEARCHABLE DROPDOWN ---
 const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled = false }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -1008,7 +995,7 @@ const SearchableSelect = ({ options = [], value, onChange, placeholder, disabled
   );
 };
 
-// --- UPDATED SALES INVOICES (with COD and Per-Invoice Meters Column) ---
+// --- SALES INVOICES ---
 const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1178,7 +1165,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const deleteOrder = async (id) => { if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id)); }
 
-  // FILTERED ORDERS LIST (DATE + SEARCH TERM)
   const filteredOrders = (orders || []).filter(o => {
     const matchesDate = o.date >= dateRangeStart && o.date <= dateRangeEnd;
     const s = searchTerm.toLowerCase().trim();
@@ -1190,7 +1176,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     return matchesDate && matchesSearch;
   });
 
-  // GRAND TOTAL METERS (ACROSS ALL FILTERED INVOICES)
   const grandTotalSalesMeters = filteredOrders.reduce((total, order) => {
     const orderMeters = (order.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
     return total + orderMeters;
@@ -1208,7 +1193,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         <button onClick={handleNewInvoice} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"><Plus size={20}/> New Invoice</button>
       </div>
 
-      {/* SEARCH BAR */}
       {!showAdd && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
             <Search className="text-slate-400" size={20}/>
@@ -1224,7 +1208,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
       )}
 
-      {/* GRAND TOTAL METERS BADGE */}
       {!showAdd && (
         <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
           <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Volume (Filtered Invoices)</span>
@@ -1331,7 +1314,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
         </div>
       )}
 
-      {/* TABLE RENDERING FILTERED ORDERS */}
       <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm text-left">
           <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
@@ -1350,7 +1332,6 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredOrders.map(order => {
-              // CALCULATE TOTAL METERS FOR THIS SPECIFIC INVOICE
               const invoiceMetersSum = (order.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
 
               return (
@@ -1418,7 +1399,221 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     </div>
   );
 };
-// --- UPDATED PURCHASES COMPONENT (with Per-Invoice Meters Column) ---
+
+// --- CUSTOMER ORDERS (WITHOUT PRICING, WITH PARTIAL FULFILLMENT) ---
+const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [newOrder, setNewOrder] = useState({ 
+    customer: '', 
+    orderId: '', 
+    date: new Date().toISOString().split('T')[0], 
+    notes: '',
+    items: [] 
+  });
+  
+  const [item, setItem] = useState({ fabricCode: '', requestedMeters: '', status: 'Pending' });
+
+  const addItem = () => {
+    if (item.fabricCode && item.requestedMeters) {
+      setNewOrder({
+        ...newOrder,
+        items: [...(newOrder.items || []), { ...item }]
+      });
+      setItem({ fabricCode: '', requestedMeters: '', status: 'Pending' });
+    }
+  };
+
+  const toggleItemStatus = (idx) => {
+    const statuses = ['Pending', 'Fulfilled', 'Unavailable'];
+    const currentItems = [...newOrder.items];
+    const currentStatusIdx = statuses.indexOf(currentItems[idx].status);
+    const nextStatus = statuses[(currentStatusIdx + 1) % statuses.length];
+    
+    currentItems[idx].status = nextStatus;
+    setNewOrder({ ...newOrder, items: currentItems });
+  };
+
+  const calculateOverallStatus = (items) => {
+    if (!items || items.length === 0) return 'Empty';
+    const fulfilled = items.filter(i => i.status === 'Fulfilled').length;
+    const unavailable = items.filter(i => i.status === 'Unavailable').length;
+    const pending = items.filter(i => i.status === 'Pending').length;
+
+    if (pending === items.length) return 'Pending';
+    if (fulfilled + unavailable === items.length) return 'Completed';
+    return 'Partial';
+  };
+
+  const saveOrder = async () => {
+    if (!newOrder.customer) return alert("Please select a customer.");
+    
+    const overallStatus = calculateOverallStatus(newOrder.items);
+    const orderToSave = { ...newOrder, overallStatus };
+    
+    if (editingId) {
+      await updateDoc(doc(db, "customer_orders", editingId), orderToSave);
+    } else {
+      orderToSave.orderId = `REQ-${Date.now().toString().slice(-6)}`;
+      await addDoc(collection(db, "customer_orders"), orderToSave);
+    }
+    
+    setShowAdd(false);
+    setEditingId(null);
+    setNewOrder({ customer: '', orderId: '', date: new Date().toISOString().split('T')[0], notes: '', items: [] });
+  };
+
+  const deleteOrder = async (id) => { 
+    if(confirm("Delete this order request?")) await deleteDoc(doc(db, "customer_orders", id)); 
+  }
+
+  const filteredOrders = (orders || []).filter(o => {
+    const s = searchTerm.toLowerCase().trim();
+    return !s || String(o.customer || '').toLowerCase().includes(s) || String(o.orderId || '').toLowerCase().includes(s);
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+            <button onClick={onBack} className="bg-white border p-2 rounded-lg text-slate-500 hover:bg-slate-50"><ArrowLeft/></button>
+            <div><h2 className="text-2xl font-bold text-slate-800">Customer Orders</h2><p className="text-slate-500">Track requested fabrics & fulfillment</p></div>
+        </div>
+        <button onClick={() => { setShowAdd(true); setEditingId(null); setNewOrder({ customer: '', orderId: '', date: new Date().toISOString().split('T')[0], notes: '', items: [] }); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2">
+          <Plus size={20}/> New Order
+        </button>
+      </div>
+
+      {!showAdd && (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <Search className="text-slate-400" size={20}/>
+            <input className="w-full bg-transparent outline-none font-medium text-slate-700" placeholder="Search by Client Name or Order ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-indigo-100 animate-in fade-in">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="font-bold text-xl text-slate-800">{editingId ? 'Edit Order' : 'New Order Request'}</h3>
+             <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600"><X/></button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-6 mb-8">
+            <div className="col-span-2">
+              <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Customer</label>
+              <SearchableSelect 
+                options={(customers || []).map(c => ({ value: c.name, label: c.name }))}
+                value={newOrder.customer}
+                onChange={(val) => setNewOrder({ ...newOrder, customer: val })}
+                placeholder="Search Customer..."
+              />
+            </div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Date</label><input type="date" className="w-full border border-slate-300 p-3 rounded-lg bg-white" value={newOrder.date} onChange={e => setNewOrder({ ...newOrder, date: e.target.value })} /></div>
+            <div><label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Notes</label><input type="text" className="w-full border border-slate-300 p-3 rounded-lg bg-white" placeholder="e.g. Urgent" value={newOrder.notes} onChange={e => setNewOrder({ ...newOrder, notes: e.target.value })} /></div>
+          </div>
+          
+          <div className="bg-indigo-50 p-6 rounded-xl mb-6 border border-indigo-100">
+            <h4 className="font-bold text-indigo-800 text-sm uppercase mb-4">Requested Fabrics</h4>
+            
+            <div className="flex gap-4 mb-6 items-end">
+              <div className="flex-1">
+                  <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Fabric Code</label>
+                  <SearchableSelect 
+                    options={fabrics.map(f => ({ value: f.mainCode, label: `${f.mainCode} - ${f.name}` }))}
+                    value={item.fabricCode}
+                    onChange={(val) => setItem({ ...item, fabricCode: val })}
+                    placeholder="Select Fabric..."
+                  />
+              </div>
+              <div className="w-32"><label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label><input type="number" placeholder="Qty" className="border p-3 rounded-lg w-full bg-white font-bold" value={item.requestedMeters} onChange={e => setItem({ ...item, requestedMeters: e.target.value })} /></div>
+              <button onClick={addItem} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-indigo-700 h-[50px]">Add</button>
+            </div>
+
+            {(newOrder.items || []).length > 0 && (
+                <div className="bg-white rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-slate-500"><tr><th className="text-left p-3 pl-4">Fabric</th><th className="text-right p-3">Meters Req.</th><th className="text-center p-3">Item Status</th><th className="text-right p-3 pr-4"></th></tr></thead>
+                        <tbody>
+                            {(newOrder.items || []).map((i, idx) => (
+                                <tr key={idx} className="border-t">
+                                    <td className="p-3 pl-4 font-bold text-slate-700">{i.fabricCode}</td>
+                                    <td className="p-3 text-right font-mono font-bold text-slate-600">{i.requestedMeters}m</td>
+                                    <td className="p-3 text-center">
+                                      <button 
+                                        onClick={() => toggleItemStatus(idx)}
+                                        className={`px-3 py-1 rounded-full text-xs font-bold transition-colors border ${
+                                          i.status === 'Fulfilled' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                          i.status === 'Unavailable' ? 'bg-red-50 text-red-700 border-red-200' :
+                                          'bg-amber-50 text-amber-700 border-amber-200'
+                                        }`}
+                                      >
+                                        {i.status || 'Pending'}
+                                      </button>
+                                    </td>
+                                    <td className="p-3 text-right pr-4"><button onClick={() => setNewOrder({...newOrder, items: newOrder.items.filter((_, x) => x !== idx)})} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+          </div>
+          <div className="flex justify-between items-center">
+             <div className="text-sm text-slate-500"><strong>Overall Status:</strong> {calculateOverallStatus(newOrder.items)}</div>
+             <div className="flex gap-3"><button onClick={() => setShowAdd(false)} className="px-6 py-3 rounded-lg font-bold text-slate-500 hover:bg-slate-100">Cancel</button><button onClick={saveOrder} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-indigo-700">Save Order</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* LIST VIEW */}
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-slate-50 text-slate-500 uppercase font-semibold">
+            <tr>
+              <th className="p-4 pl-6">Order ID</th>
+              <th className="p-4">Customer</th>
+              <th className="p-4">Date</th>
+              <th className="p-4 text-center">Items</th>
+              <th className="p-4 text-center">Status</th>
+              <th className="p-4 text-right pr-6">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredOrders.map(order => {
+              const status = calculateOverallStatus(order.items);
+              return (
+                <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-4 pl-6 font-mono text-xs text-slate-500">{order.orderId}</td>
+                  <td className="p-4 font-bold text-slate-800">{order.customer}</td>
+                  <td className="p-4 text-slate-500">{formatGreekDate(order.date)}</td>
+                  <td className="p-4 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{(order.items || []).length}</span></td>
+                  <td className="p-4 text-center">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                          status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                          status === 'Partial' ? 'bg-indigo-100 text-indigo-700' :
+                          'bg-amber-100 text-amber-700'
+                      }`}>
+                        {status}
+                      </span>
+                  </td>
+                  <td className="p-4 text-right pr-6 flex justify-end gap-3">
+                    <button onClick={() => { setNewOrder(order); setEditingId(order.id); setShowAdd(true); }} className="text-slate-400 hover:text-indigo-600"><Pencil size={18}/></button>
+                    <button onClick={() => deleteOrder(order.id)} className="text-slate-300 hover:text-red-500"><Trash2 size={18}/></button>
+                  </td>
+                </tr>
+              );
+            })}
+            {filteredOrders.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-slate-400 italic">No orders found.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// --- PURCHASES ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1433,7 +1628,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Purchase" onBack={() => setViewInvoice(null)} />;
 
-  // --- EXCEL IMPORT LOGIC ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1582,10 +1776,8 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
 
   const handleDelete = async (id) => { if(confirm("Delete this purchase?")) await deleteDoc(doc(db, "purchases", id)); }
 
-  // FILTER PURCHASES BY DATE RANGE
   const filteredPurchasesList = (purchases || []).filter(p => p.date >= dateRangeStart && p.date <= dateRangeEnd);
 
-  // GRAND TOTAL METERS (ACROSS ALL FILTERED PURCHASES)
   const grandTotalPurchasedMeters = filteredPurchasesList.reduce((total, purchase) => {
     const purchaseMeters = (purchase.items || []).reduce((sum, i) => sum + (parseFloat(i.meters) || 0), 0);
     return total + purchaseMeters;
@@ -1610,7 +1802,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
           </div>
        </div>
 
-       {/* GRAND TOTAL METERS BADGE */}
        {!showAdd && (
          <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
            <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">Total Volume (Filtered Invoices)</span>
@@ -1701,7 +1892,6 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
              </thead>
              <tbody className="divide-y divide-slate-100">
                 {filteredPurchasesList.map(p => {
-                   // CALCULATE TOTAL METERS FOR THIS SPECIFIC PURCHASE INVOICE
                    const purchaseMetersSum = (p.items || []).reduce((sum, item) => sum + (parseFloat(item.meters) || 0), 0);
 
                    return (
@@ -1728,7 +1918,8 @@ const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd
     </div>
   );
 };
-// --- UPDATED EXPENSES: MULTI-ITEM SUPPORT + TAX ID ---
+
+// --- EXPENSES ---
 const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1844,7 +2035,7 @@ const Expenses = ({ expenses, dateRangeStart, dateRangeEnd, onBack }) => {
   )
 };
 
-// --- UPDATED CONTACT LIST (v5.52: Added Notes Field) ---
+// --- CONTACT LIST ---
 const ContactList = ({ title, data, collectionName, onBack }) => {
    const [showAdd, setShowAdd] = useState(false); 
    const [editingId, setEditingId] = useState(null); 
@@ -2048,7 +2239,7 @@ const SamplesTab = ({ samples, customers, fabrics, onBack }) => {
   );
 };
 
-// --- NEW CALENDAR & NOTES TAB ---
+// --- CALENDAR & NOTES TAB ---
 const CalendarTab = ({ onBack }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [notes, setNotes] = useState({});
@@ -2169,7 +2360,7 @@ const CalendarTab = ({ onBack }) => {
 };
 
 
-// --- 5. MAIN APP COMPONENT ---
+// --- MAIN APP COMPONENT ---
 const FabricERP = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -2184,6 +2375,7 @@ const FabricERP = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [samples, setSamples] = useState([]);
+  const [customerOrders, setCustomerOrders] = useState([]);
 
   useEffect(() => {
     // Dynamically Load PDF Script
@@ -2200,7 +2392,9 @@ const FabricERP = () => {
     const unsubSup = onSnapshot(collection(db, 'suppliers'), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubCus = onSnapshot(collection(db, 'customers'), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubSamp = onSnapshot(query(collection(db, 'samples'), orderBy('createdAt', 'desc')), (snap) => setSamples(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); document.body.removeChild(script); };
+    const unsubCustOrd = onSnapshot(query(collection(db, 'customer_orders'), orderBy('date', 'desc')), (snap) => setCustomerOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    
+    return () => { unsubFab(); unsubOrd(); unsubPur(); unsubExp(); unsubSup(); unsubCus(); unsubSamp(); unsubCustOrd(); document.body.removeChild(script); };
   }, [isAuthenticated]);
 
   if (!isAuthenticated) return <LoginScreen onLogin={setIsAuthenticated} />;
@@ -2226,17 +2420,17 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.10</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.12</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
            <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-4">Main</p>
            <NavItem id="dashboard" icon={Home} label="Dashboard" />
            <NavItem id="inventory" icon={Package} label="Inventory" />
-           {/* NEW CALENDAR TAB ADDED HERE */}
            <NavItem id="calendar" icon={Calendar} label="Calendar" />
            
            <p className="px-4 text-xs font-bold text-slate-600 uppercase tracking-wider mb-2 mt-6">Finance</p>
+           <NavItem id="customerorders" icon={ClipboardList} label="Customer Orders" />
            <NavItem id="salesinvoices" icon={FileText} label="Sales Invoices" />
            <NavItem id="purchases" icon={BarChart3} label="Purchases" />
            <NavItem id="expenses" icon={DollarSign} label="Expenses" />
@@ -2276,12 +2470,10 @@ const FabricERP = () => {
         {/* SCROLLABLE CONTENT */}
         <div className="flex-1 overflow-y-auto p-8" id="main-scroll-container">
            <div className="max-w-7xl mx-auto">
-              {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onNavigate={setActiveTab} />}
+              {activeTab === 'dashboard' && <Dashboard fabrics={fabrics} orders={orders} purchases={purchases} expenses={expenses} suppliers={suppliers} customers={customers} samples={samples} customerOrders={customerOrders} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onNavigate={setActiveTab} />}
               {activeTab === 'inventory' && <InventoryTab fabrics={fabrics} purchases={purchases} suppliers={suppliers} onBack={() => setActiveTab('dashboard')} />}
-              
-              {/* NEW CALENDAR ROUTE ADDED HERE */}
               {activeTab === 'calendar' && <CalendarTab onBack={() => setActiveTab('dashboard')} />}
-              
+              {activeTab === 'customerorders' && <CustomerOrders orders={customerOrders} customers={customers} fabrics={fabrics} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'salesinvoices' && <SalesInvoices orders={orders} customers={customers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'purchases' && <Purchases purchases={purchases} suppliers={suppliers} fabrics={fabrics} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
               {activeTab === 'expenses' && <Expenses expenses={expenses} dateRangeStart={dateRangeStart} dateRangeEnd={dateRangeEnd} onBack={() => setActiveTab('dashboard')} />}
