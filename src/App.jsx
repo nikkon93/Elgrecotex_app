@@ -355,16 +355,18 @@ const OrderViewer = ({ order, onBack }) => {
         <div className="border border-slate-300 rounded-lg overflow-hidden mb-12">
             <table className="w-full">
                <thead className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                   <tr>
-                       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Fabric Code</th>
-                       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Roll / Color</th>
-                       <th className="text-right py-4 px-4 font-bold border-b border-slate-300">Requested Qty</th>
-                       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Roll ID</th>
-                       <th className="text-center py-4 px-4 font-bold border-l border-slate-300 border-b">Roll Meters</th>
-                       <th className="text-center py-4 px-4 font-bold border-l border-slate-300 border-b">Weight</th>
-                       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Item Status</th>
-                   </tr>
-               </thead>
+   <tr>
+       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Fabric Code</th>
+       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Roll / Color</th>
+       <th className="text-right py-4 px-4 font-bold border-b border-slate-300">Requested Qty</th>
+       {/* Added w-[180px] for a wider Roll ID box */}
+       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b w-[180px]">Roll ID</th>
+       {/* Added w-[80px] for smaller Meters and Weight boxes */}
+       <th className="text-center py-4 px-2 font-bold border-l border-slate-300 border-b w-[80px]">Roll Meters</th>
+       <th className="text-center py-4 px-2 font-bold border-l border-slate-300 border-b w-[80px]">Weight</th>
+       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Item Status</th>
+   </tr>
+</thead>
                <tbody className="divide-y divide-slate-200">
                   {(order.items || []).map((item, idx) => (
                       <tr key={idx}>
