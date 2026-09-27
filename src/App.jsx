@@ -127,7 +127,7 @@ const LoginScreen = ({ onLogin }) => {
             ENTER SYSTEM <ChevronRight size={20}/>
           </button>
         </form>
-        <p className="text-center text-slate-300 text-xs mt-8">v5.13 Dashboard Updates</p>
+        <p className="text-center text-slate-300 text-xs mt-8">v5.14 Warehouse Form</p>
       </div>
     </div>
   );
@@ -313,19 +313,19 @@ const OrderViewer = ({ order, onBack }) => {
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
-      <div className="w-full max-w-4xl mb-6 flex justify-between items-center print:hidden">
+      <div className="w-full max-w-5xl mb-6 flex justify-between items-center print:hidden">
           <button onClick={onBack} className="bg-white text-slate-700 px-6 py-2 rounded-lg font-bold shadow-sm hover:bg-slate-50 border flex items-center gap-2"><ArrowLeft size={18}/> Back to Orders</button>
           <button onClick={() => downloadPDF('printable-order', pdfName)} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-indigo-700 flex items-center gap-2 animate-bounce">
             <FileDown size={18}/> Download PDF
           </button>
       </div>
 
-      <div id="printable-order" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-4xl border border-gray-200">
+      <div id="printable-order" className="bg-white p-12 rounded-xl shadow-2xl w-full max-w-5xl border border-gray-200">
         <div className="flex justify-between items-start mb-12 border-b pb-8">
             <div>
               <img src="/logo.png" className="h-20 mb-4 object-contain" alt="Logo" style={{maxHeight:'80px'}}/>
               <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Order Request</h1>
-              <p className="text-indigo-600 font-bold mt-1">Elgrecotex</p>
+              <p className="text-indigo-600 font-bold mt-1">Elgrecotex Warehouse</p>
             </div>
             <div className="text-right">
               <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">ORDER</h2>
@@ -334,7 +334,7 @@ const OrderViewer = ({ order, onBack }) => {
             </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-12 mb-12">
+        <div className="grid grid-cols-2 gap-12 mb-8">
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Requested By</h3>
               <p className="text-xl font-bold text-slate-800">{order.customer}</p>
@@ -352,26 +352,36 @@ const OrderViewer = ({ order, onBack }) => {
             </div>
         </div>
 
-        <div className="border rounded-lg overflow-hidden mb-12">
+        <div className="border border-slate-300 rounded-lg overflow-hidden mb-12">
             <table className="w-full">
-               <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+               <thead className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
                    <tr>
-                       <th className="text-left py-4 px-4 font-bold">Fabric Code</th>
-                       <th className="text-left py-4 px-4 font-bold">Roll / Color</th>
-                       <th className="text-right py-4 px-4 font-bold">Requested Qty</th>
-                       <th className="text-center py-4 px-4 font-bold">Item Status</th>
+                       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Fabric Code</th>
+                       <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Roll / Color</th>
+                       <th className="text-right py-4 px-4 font-bold border-b border-slate-300">Requested Qty</th>
+                       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Roll ID</th>
+                       <th className="text-center py-4 px-4 font-bold border-l border-slate-300 border-b">Roll Meters</th>
+                       <th className="text-center py-4 px-4 font-bold border-l border-slate-300 border-b">Weight</th>
+                       <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Item Status</th>
                    </tr>
                </thead>
-               <tbody className="divide-y divide-slate-100">
+               <tbody className="divide-y divide-slate-200">
                   {(order.items || []).map((item, idx) => (
                       <tr key={idx}>
-                        <td className="py-4 px-4 font-bold text-slate-700">{item.fabricCode}</td>
-                        <td className="py-4 px-4 text-slate-600">
+                        <td className="py-4 px-4 font-bold text-slate-700 bg-white">{item.fabricCode}</td>
+                        <td className="py-4 px-4 text-slate-600 bg-white">
                             <span className="font-mono text-blue-600 text-xs mr-2">{item.subCode || item.rollCode || '-'}</span>
                             {item.rollColor && <span>({item.rollColor})</span>}
                         </td>
-                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">{item.requestedMeters}m</td>
-                        <td className="py-4 px-4 text-center">
+                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-white">{item.requestedMeters}m</td>
+                        
+                        {/* Empty cells for manual warehouse entry */}
+                        <td className="py-4 px-4 border-l-2 border-slate-300 bg-slate-50/50"></td>
+                        <td className="py-4 px-4 border-l border-slate-300 bg-slate-50/50"></td>
+                        <td className="py-4 px-4 border-l border-slate-300 bg-slate-50/50"></td>
+                        
+                        {/* Existing Status */}
+                        <td className="py-4 px-4 text-center border-l-2 border-slate-300 bg-white">
                            <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-bold border ${
                               item.status === 'Fulfilled' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                               item.status === 'Unavailable' ? 'bg-red-50 text-red-700 border-red-200' :
@@ -439,7 +449,7 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
   const totalCashOut = filteredPurchases.reduce((s, p) => s + (parseFloat(p.finalPrice) || 0), 0) + filteredExpenses.reduce((s, e) => s + (parseFloat(e.finalPrice || e.amount) || 0), 0);
   const netProfit = totalRevenue - (netPurchases + netExpenses);
   
-  // 3. UPDATED PENDING LOGIC
+  // 3. PENDING LOGIC
   const pendingInvoices = orders.filter(o => o.status === 'Pending').length;
   const pendingCustomerOrders = (customerOrders || []).filter(o => o.overallStatus === 'Pending' || o.overallStatus === 'Partial').length;
 
@@ -2475,7 +2485,7 @@ const CalendarTab = ({ onBack }) => {
             />
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setSelectedDate(null)} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
-              <button onClick={saveNote} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700">Save Note</button>
+              <button onClick={saveNote} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">Save Note</button>
             </div>
           </div>
         </div>
@@ -2545,7 +2555,7 @@ const FabricERP = () => {
            </div>
            <div className="text-center">
               <h1 className="font-bold text-xl tracking-tight">Elgrecotex</h1>
-              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.13</p>
+              <p className="text-xs text-slate-500 uppercase tracking-widest">Enterprise 5.14</p>
            </div>
         </div>
         <nav className="flex-1 px-4 space-y-2">
