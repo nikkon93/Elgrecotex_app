@@ -1505,7 +1505,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- CUSTOMER ORDERS (WITHOUT PRICING, WITH PARTIAL FULFILLMENT & PDF) ---
+// --- CUSTOMER ORDERS (WITH REAL-TIME AVAILABILITY RADAR) ---
 const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1524,6 +1524,37 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
 
   if (viewOrder) return <OrderViewer order={viewOrder} onBack={() => setViewOrder(null)} />;
+
+  // --- REAL-TIME AVAILABILITY CALCULATOR ---
+  const getRollAvailability = (rollId) => {
+    if (!rollId) return { physical: 0, reserved: 0, available: 0 };
+
+    // 1. Get total physical stock on the roll from Inventory
+    const fabric = fabrics.find(f => (f.rolls || []).some(r => r.rollId === rollId));
+    const roll = fabric?.rolls?.find(r => r.rollId === rollId);
+    const physical = parseFloat(roll?.meters || 0);
+
+    // 2. Sum up reserved stock from other PENDING Customer Orders
+    let reserved = 0;
+    orders.forEach(o => {
+      if (o.overallStatus !== 'Completed' && o.id !== editingId) {
+        (o.items || []).forEach(i => {
+          if (i.rollId === rollId && i.status !== 'Unavailable') {
+            reserved += parseFloat(i.requestedMeters || 0);
+          }
+        });
+      }
+    });
+
+    // 3. Add any items already drafted in the new order you are currently typing
+    (newOrder.items || []).forEach(i => {
+      if (i.rollId === rollId && i.status !== 'Unavailable') {
+        reserved += parseFloat(i.requestedMeters || 0);
+      }
+    });
+
+    return { physical, reserved, available: physical - reserved };
+  };
 
   const addItem = () => {
     if (item.fabricCode && item.rollId && item.requestedMeters) {
@@ -1648,10 +1679,16 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
               <div className="flex-1">
                   <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Roll ID / Color</label>
                   <SearchableSelect 
-                    options={(selectedFabric?.rolls || []).map(r => ({ 
-                      value: r.rollId, 
-                      label: `${r.subCode} | ${r.rollColor || '-'} | ${(parseFloat(r.meters)||0).toFixed(2)}m` 
-                    }))}
+                    options={(selectedFabric?.rolls || []).map(r => { 
+                      const avail = getRollAvailability(r.rollId);
+                      let labelStr = `${r.subCode} | ${r.rollColor || '-'} | Total: ${avail.physical.toFixed(2)}m`;
+                      
+                      if (avail.reserved > 0) {
+                          labelStr += ` (⚠️ Reserved: ${avail.reserved.toFixed(2)}m | Avail: ${avail.available.toFixed(2)}m)`;
+                      }
+                      
+                      return { value: r.rollId, label: labelStr };
+                    })}
                     value={item.rollId}
                     onChange={(val) => setItem({ ...item, rollId: val })}
                     placeholder="Select Color/Roll..."
@@ -1659,7 +1696,42 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
                   />
               </div>
 
-              <div className="w-32"><label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label><input type="number" placeholder="Qty" className="border p-3 rounded-lg w-full bg-white font-bold" value={item.requestedMeters} onChange={e => setItem({ ...item, requestedMeters: e.target.value })} /></div>
+              {(() => {
+                  const currentAvail = getRollAvailability(item.rollId);
+                  const requested = parseFloat(item.requestedMeters || 0);
+                  const isExceeding = item.rollId && requested > currentAvail.available;
+                  const isPartiallyReserved = item.rollId && currentAvail.reserved > 0 && !isExceeding;
+                  
+                  let inputClasses = "border p-3 rounded-lg w-full font-bold transition-colors ";
+                  if (isExceeding) {
+                      inputClasses += "border-red-500 text-red-700 bg-red-50"; // RED: Not enough available
+                  } else if (isPartiallyReserved && requested > 0) {
+                      inputClasses += "border-amber-400 text-amber-800 bg-amber-50"; // YELLOW: Enough, but shared with another order
+                  } else if (item.rollId && requested > 0) {
+                      inputClasses += "border-emerald-400 text-emerald-800 bg-emerald-50"; // GREEN: Plenty available
+                  } else {
+                      inputClasses += "border-slate-300 bg-white text-slate-800"; // DEFAULT
+                  }
+
+                  return (
+                      <div className="w-32 relative">
+                          <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label>
+                          <input 
+                              type="number" 
+                              placeholder="Qty" 
+                              className={inputClasses}
+                              value={item.requestedMeters} 
+                              onChange={e => setItem({ ...item, requestedMeters: e.target.value })} 
+                          />
+                          {isExceeding && (
+                              <span className="text-[10px] text-red-600 font-bold absolute -bottom-5 left-0 whitespace-nowrap">
+                                  Only {currentAvail.available.toFixed(1)}m free
+                              </span>
+                          )}
+                      </div>
+                  );
+              })()}
+
               <button onClick={addItem} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-indigo-700 h-[50px]">Add</button>
             </div>
 
