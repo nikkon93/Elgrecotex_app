@@ -9,9 +9,10 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ImportExcelBtn from './components/ImportExcelBtn.jsx';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { db, auth } from './firebase'; 
 
-// --- 🔐 SECURITY SETTINGS ---
-const APP_PASSWORD = "elgreco!2026@"; 
+ 
 
 // --- UTILITY: GREEK DATE FORMATTER (DD/MM/YYYY) ---
 const formatGreekDate = (dateStr) => {
@@ -85,16 +86,20 @@ const downloadPDF = (elementId, filename) => {
   window.html2pdf().set(opt).from(element).save();
 };
 
-// --- 2. LOGIN SCREEN ---
+// --- 2. LOGIN SCREEN (SECURED WITH FIREBASE AUTH) ---
 const LoginScreen = ({ onLogin }) => {
   const [input, setInput] = useState('');
   const [error, setError] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (input === APP_PASSWORD) {
+    try {
+      // ⬇️ Authenticate securely against Firebase servers
+      // Make sure this email matches exactly what you typed in the Firebase Console
+      await signInWithEmailAndPassword(auth, "admin@elgrecotex.com", input);
       onLogin(true);
-    } else {
+    } catch (err) {
+      console.error("Login failed:", err.message);
       setError(true);
       setInput('');
     }
