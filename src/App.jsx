@@ -1505,7 +1505,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   );
 };
 
-// --- CUSTOMER ORDERS (WITH REAL-TIME AVAILABILITY RADAR) ---
+// --- CUSTOMER ORDERS (WITH REAL-TIME AVAILABILITY RADAR & PRE-ORDERS) ---
 const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -1522,6 +1522,10 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   
   const [item, setItem] = useState({ fabricCode: '', rollId: '', requestedMeters: '', status: 'Pending' });
   const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
+
+  // NEW PRE-ORDER STATES
+  const [isPreorderMode, setIsPreorderMode] = useState(false);
+  const [customItem, setCustomItem] = useState({ fabricCode: '', details: '', requestedMeters: '' });
 
   if (viewOrder) return <OrderViewer order={viewOrder} onBack={() => setViewOrder(null)} />;
 
@@ -1571,6 +1575,26 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
       setItem({ fabricCode: '', rollId: '', requestedMeters: '', status: 'Pending' });
     } else {
         alert("Please select a fabric, roll, and meters.");
+    }
+  };
+
+  const addPreorderItem = () => {
+    if (customItem.fabricCode && customItem.requestedMeters) {
+      setNewOrder({
+        ...newOrder,
+        items: [...(newOrder.items || []), { 
+            fabricCode: customItem.fabricCode, 
+            rollId: `PRE-${Date.now()}`, 
+            subCode: 'PRE-ORDER', 
+            rollColor: customItem.details,
+            requestedMeters: customItem.requestedMeters,
+            status: 'Pending',
+            isPreorder: true 
+        }]
+      });
+      setCustomItem({ fabricCode: '', details: '', requestedMeters: '' });
+    } else {
+        alert("Please enter a Fabric Code and Meters for the pre-order.");
     }
   };
 
@@ -1663,77 +1687,109 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
           </div>
           
           <div className="bg-indigo-50 p-6 rounded-xl mb-6 border border-indigo-100">
-            <h4 className="font-bold text-indigo-800 text-sm uppercase mb-4">Requested Fabrics</h4>
-            
-            <div className="flex gap-4 mb-6 items-end">
-              <div className="flex-1">
-                  <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Fabric Code</label>
-                  <SearchableSelect 
-                    options={fabrics.map(f => ({ value: f.mainCode, label: `${f.mainCode} - ${f.name}` }))}
-                    value={item.fabricCode}
-                    onChange={(val) => setItem({ ...item, fabricCode: val, rollId: '' })}
-                    placeholder="Select Fabric..."
-                  />
-              </div>
-
-              <div className="flex-1">
-                  <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Roll ID / Color</label>
-                  <SearchableSelect 
-                    options={(selectedFabric?.rolls || []).map(r => { 
-                      const avail = getRollAvailability(r.rollId);
-                      let labelStr = `${r.subCode} | ${r.rollColor || '-'} | Total: ${avail.physical.toFixed(2)}m`;
-                      
-                      if (avail.reserved > 0) {
-                          labelStr += ` (⚠️ Reserved: ${avail.reserved.toFixed(2)}m | Avail: ${avail.available.toFixed(2)}m)`;
-                      }
-                      
-                      return { value: r.rollId, label: labelStr };
-                    })}
-                    value={item.rollId}
-                    onChange={(val) => setItem({ ...item, rollId: val })}
-                    placeholder="Select Color/Roll..."
-                    disabled={!item.fabricCode}
-                  />
-              </div>
-
-              {(() => {
-                  const currentAvail = getRollAvailability(item.rollId);
-                  const requested = parseFloat(item.requestedMeters || 0);
-                  const isExceeding = item.rollId && requested > currentAvail.available;
-                  const isPartiallyReserved = item.rollId && currentAvail.reserved > 0 && !isExceeding;
-                  
-                  let inputClasses = "border p-3 rounded-lg w-full font-bold transition-colors ";
-                  if (isExceeding) {
-                      inputClasses += "border-red-500 text-red-700 bg-red-50"; // RED: Not enough available
-                  } else if (isPartiallyReserved && requested > 0) {
-                      inputClasses += "border-amber-400 text-amber-800 bg-amber-50"; // YELLOW: Enough, but shared with another order
-                  } else if (item.rollId && requested > 0) {
-                      inputClasses += "border-emerald-400 text-emerald-800 bg-emerald-50"; // GREEN: Plenty available
-                  } else {
-                      inputClasses += "border-slate-300 bg-white text-slate-800"; // DEFAULT
-                  }
-
-                  return (
-                      <div className="w-32 relative">
-                          <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label>
-                          <input 
-                              type="number" 
-                              placeholder="Qty" 
-                              className={inputClasses}
-                              value={item.requestedMeters} 
-                              onChange={e => setItem({ ...item, requestedMeters: e.target.value })} 
-                          />
-                          {isExceeding && (
-                              <span className="text-[10px] text-red-600 font-bold absolute -bottom-5 left-0 whitespace-nowrap">
-                                  Only {currentAvail.available.toFixed(1)}m free
-                              </span>
-                          )}
-                      </div>
-                  );
-              })()}
-
-              <button onClick={addItem} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-indigo-700 h-[50px]">Add</button>
+            <div className="flex justify-between items-center mb-4">
+               <h4 className="font-bold text-indigo-800 text-sm uppercase">Requested Fabrics</h4>
+               
+               {/* PRE-ORDER TOGGLE */}
+               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm cursor-pointer" onClick={() => setIsPreorderMode(!isPreorderMode)}>
+                 <span className={`text-xs font-bold ${!isPreorderMode ? 'text-indigo-600' : 'text-slate-400'}`}>From Stock</span>
+                 <button 
+                   className={`w-10 h-5 rounded-full relative transition-colors ${isPreorderMode ? 'bg-amber-500' : 'bg-indigo-600'}`}
+                 >
+                   <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-0.5 transition-transform ${isPreorderMode ? 'translate-x-5' : 'translate-x-1'}`}></div>
+                 </button>
+                 <span className={`text-xs font-bold ${isPreorderMode ? 'text-amber-600' : 'text-slate-400'}`}>Pre-order (Not in WH)</span>
+               </div>
             </div>
+            
+            {/* CONDITIONAL RENDER: PRE-ORDER VS IN-STOCK */}
+            {isPreorderMode ? (
+              <div className="flex gap-4 mb-6 items-end bg-amber-50/50 p-4 rounded-lg border border-amber-100">
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block">Custom Fabric Code</label>
+                    <input className="w-full border border-amber-200 p-3 rounded-lg bg-white font-bold text-amber-900 focus:ring-2 focus:ring-amber-200 outline-none" placeholder="e.g. NEW-LINEN-01" value={customItem.fabricCode} onChange={e => setCustomItem({ ...customItem, fabricCode: e.target.value })} />
+                </div>
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block">Color / Details</label>
+                    <input className="w-full border border-amber-200 p-3 rounded-lg bg-white focus:ring-2 focus:ring-amber-200 outline-none" placeholder="e.g. Navy Blue" value={customItem.details} onChange={e => setCustomItem({ ...customItem, details: e.target.value })} />
+                </div>
+                <div className="w-32">
+                    <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block">Meters</label>
+                    <input type="number" className="w-full border border-amber-200 p-3 rounded-lg bg-white font-bold" placeholder="Qty" value={customItem.requestedMeters} onChange={e => setCustomItem({ ...customItem, requestedMeters: e.target.value })} />
+                </div>
+                <button onClick={addPreorderItem} className="bg-amber-500 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-amber-600 h-[50px]">Add</button>
+              </div>
+            ) : (
+              <div className="flex gap-4 mb-6 items-end">
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Fabric Code</label>
+                    <SearchableSelect 
+                      options={fabrics.map(f => ({ value: f.mainCode, label: `${f.mainCode} - ${f.name}` }))}
+                      value={item.fabricCode}
+                      onChange={(val) => setItem({ ...item, fabricCode: val, rollId: '' })}
+                      placeholder="Select Fabric..."
+                    />
+                </div>
+
+                <div className="flex-1">
+                    <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Roll ID / Color</label>
+                    <SearchableSelect 
+                      options={(selectedFabric?.rolls || []).map(r => { 
+                        const avail = getRollAvailability(r.rollId);
+                        let labelStr = `${r.subCode} | ${r.rollColor || '-'} | Total: ${avail.physical.toFixed(2)}m`;
+                        
+                        if (avail.reserved > 0) {
+                            labelStr += ` (⚠️ Reserved: ${avail.reserved.toFixed(2)}m | Avail: ${avail.available.toFixed(2)}m)`;
+                        }
+                        
+                        return { value: r.rollId, label: labelStr };
+                      })}
+                      value={item.rollId}
+                      onChange={(val) => setItem({ ...item, rollId: val })}
+                      placeholder="Select Color/Roll..."
+                      disabled={!item.fabricCode}
+                    />
+                </div>
+
+                {(() => {
+                    const currentAvail = getRollAvailability(item.rollId);
+                    const requested = parseFloat(item.requestedMeters || 0);
+                    const isExceeding = item.rollId && requested > currentAvail.available;
+                    const isPartiallyReserved = item.rollId && currentAvail.reserved > 0 && !isExceeding;
+                    
+                    let inputClasses = "border p-3 rounded-lg w-full font-bold transition-colors ";
+                    if (isExceeding) {
+                        inputClasses += "border-red-500 text-red-700 bg-red-50"; 
+                    } else if (isPartiallyReserved && requested > 0) {
+                        inputClasses += "border-amber-400 text-amber-800 bg-amber-50"; 
+                    } else if (item.rollId && requested > 0) {
+                        inputClasses += "border-emerald-400 text-emerald-800 bg-emerald-50"; 
+                    } else {
+                        inputClasses += "border-slate-300 bg-white text-slate-800"; 
+                    }
+
+                    return (
+                        <div className="w-32 relative">
+                            <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Meters</label>
+                            <input 
+                                type="number" 
+                                placeholder="Qty" 
+                                className={inputClasses}
+                                value={item.requestedMeters} 
+                                onChange={e => setItem({ ...item, requestedMeters: e.target.value })} 
+                            />
+                            {isExceeding && (
+                                <span className="text-[10px] text-red-600 font-bold absolute -bottom-5 left-0 whitespace-nowrap">
+                                    Only {currentAvail.available.toFixed(1)}m free
+                                </span>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                <button onClick={addItem} className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-indigo-700 h-[50px]">Add</button>
+              </div>
+            )}
 
             {(newOrder.items || []).length > 0 && (
                 <div className="bg-white rounded-lg border overflow-hidden">
@@ -1744,7 +1800,7 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
                                 <tr key={idx} className="border-t">
                                     <td className="p-3 pl-4 font-bold text-slate-700">{i.fabricCode}</td>
                                     <td className="p-3 text-slate-600 font-medium">
-                                        <span className="text-blue-600">{i.subCode}</span>
+                                        <span className={i.isPreorder ? "text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded" : "text-blue-600"}>{i.subCode}</span>
                                         {i.rollColor && <span className="ml-2 text-slate-400">({i.rollColor})</span>}
                                     </td>
                                     <td className="p-3 text-right font-mono font-bold text-slate-600">{i.requestedMeters}m</td>
@@ -1821,7 +1877,6 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
     </div>
   );
 };
-
 // --- PURCHASES ---
 const Purchases = ({ purchases, suppliers, fabrics, dateRangeStart, dateRangeEnd, onBack }) => {
   const [showAdd, setShowAdd] = useState(false);
