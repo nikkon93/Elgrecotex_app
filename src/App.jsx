@@ -1240,19 +1240,78 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
     }
   };
 
+  // 1. ADD THIS NEW RESTORE FUNCTION
+  const restoreStock = async (orderItems) => { 
+    let localFabrics = JSON.parse(JSON.stringify(fabrics));
+    let modifiedFabricIds = new Set(); 
+
+    for (const orderItem of orderItems) { 
+        const fabricIndex = localFabrics.findIndex(f => String(f.mainCode) === String(orderItem.fabricCode)); 
+        
+        if(fabricIndex !== -1) { 
+            const fabric = localFabrics[fabricIndex];
+            const rollIndex = fabric.rolls.findIndex(r => String(r.rollId) === String(orderItem.rollId));
+            
+            if (rollIndex !== -1) {
+                // Roll exists: Add meters back
+                const currentMeters = parseFloat(fabric.rolls[rollIndex].meters || 0);
+                const restoredMeters = parseFloat(orderItem.meters || 0);
+                fabric.rolls[rollIndex].meters = currentMeters + restoredMeters;
+            } else {
+                // Failsafe: Roll was deleted earlier. Recreate it.
+                fabric.rolls.push({
+                    rollId: orderItem.rollId,
+                    subCode: orderItem.subCode || 'RESTORED',
+                    description: orderItem.description || '',
+                    designCol: orderItem.designCol || '',
+                    rollColor: orderItem.rollColor || '',
+                    location: 'Warehouse',
+                    meters: parseFloat(orderItem.meters || 0),
+                    price: parseFloat(orderItem.pricePerMeter || 0),
+                    dateAdded: new Date().toISOString().split('T')[0]
+                });
+            }
+            modifiedFabricIds.add(fabric.id); 
+        }
+    }
+
+    for (const fabricId of modifiedFabricIds) {
+        const fabricToUpdate = localFabrics.find(f => f.id === fabricId);
+        await updateDoc(doc(db, "fabrics", fabricId), { rolls: fabricToUpdate.rolls });
+    }
+  };
+
+  // 2. REPLACE YOUR EXISTING SAVE, UPDATE, AND DELETE FUNCTIONS WITH THESE:
   const saveOrder = async () => { 
     if(!newOrder.customer) return alert("Please select a customer.");
 
     const subtotal = (newOrder.items||[]).reduce((s, i) => s + (parseFloat(i.totalPrice)||0), 0); 
     const vat = subtotal * (newOrder.vatRate / 100); 
     const final = subtotal + vat; 
-    const orderToSave = { ...newOrder, subtotal, vatAmount: vat, finalPrice: final, paymentStatus: newOrder.paymentStatus || 'Unpaid' }; 
+    
+    // Notice the new lastEditedAt timestamp!
+    const orderToSave = { 
+        ...newOrder, 
+        subtotal, 
+        vatAmount: vat, 
+        finalPrice: final, 
+        paymentStatus: newOrder.paymentStatus || 'Unpaid',
+        lastEditedAt: new Date().toISOString() 
+    }; 
     
     if (editingId) { 
         const oldOrder = orders.find(o => o.id === editingId);
-        if (oldOrder.status !== 'Completed' && newOrder.status === 'Completed') {
+        
+        // Restore old stock baseline first
+        if (oldOrder.status === 'Completed') {
+            await restoreStock(oldOrder.items);
+        }
+        
+        // Deduct new stock quantities
+        if (newOrder.status === 'Completed') {
             await deductStock(newOrder.items);
         }
+        
         await updateDoc(doc(db, "orders", editingId), orderToSave); 
     } else { 
         if (newOrder.status === 'Completed') {
@@ -1267,13 +1326,27 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
 
   const updateStatus = async (id, newStatus) => { 
     const order = orders.find(o => o.id === id); 
+    
     if (order.status !== 'Completed' && newStatus === 'Completed') {
         await deductStock(order.items); 
+    } else if (order.status === 'Completed' && newStatus !== 'Completed') {
+        // Automatically restore stock if you manually change from Completed to Pending/Cancelled
+        await restoreStock(order.items);
     }
-    await updateDoc(doc(db, "orders", id), { status: newStatus }); 
+    
+    await updateDoc(doc(db, "orders", id), { status: newStatus, lastEditedAt: new Date().toISOString() }); 
   };
 
-  const deleteOrder = async (id) => { if(confirm("Delete this invoice?")) await deleteDoc(doc(db, "orders", id)); }
+  const deleteOrder = async (id) => { 
+    if(confirm("Delete this invoice?")) {
+        const order = orders.find(o => o.id === id);
+        // If the invoice was finalized, restore the stock before deleting it forever
+        if (order && order.status === 'Completed') {
+            await restoreStock(order.items);
+        }
+        await deleteDoc(doc(db, "orders", id)); 
+    }
+  }
 
   const filteredOrders = (orders || []).filter(o => {
     const matchesDate = o.date >= dateRangeStart && o.date <= dateRangeEnd;
