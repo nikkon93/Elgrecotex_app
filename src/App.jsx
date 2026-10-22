@@ -569,18 +569,25 @@ const Dashboard = ({ fabrics = [], orders = [], purchases = [], expenses = [], s
       // F. Customer Orders (NEW SECTION)
       const custOrdExp = (customerOrders || []).flatMap(o => {
         if (!o.items || o.items.length === 0) {
-            return [{ "Date": formatGreekDate(o.date), "Order ID": o.orderId, "Customer": o.customer, "Overall Status": o.overallStatus || 'Empty', "Notes": o.notes || '-', "Fabric": "-", "Meters Req": 0, "Item Status": "-" }];
+            return [{ "Date": formatGreekDate(o.date), "Order ID": o.orderId, "Customer": o.customer, "Overall Status": o.overallStatus || 'Empty', "Notes": o.notes || '-', "Fabric": "-", "Roll / Color": "-", "Meters Req": 0, "Item Status": "-" }];
         }
-        return (o.items || []).map(i => ({ 
-          "Date": formatGreekDate(o.date), 
-          "Order ID": o.orderId,
-          "Customer": o.customer, 
-          "Overall Status": o.overallStatus || 'Pending',
-          "Notes": o.notes || '-',
-          "Fabric Code": i.fabricCode || '-', 
-          "Meters Req": parseFloat(i.requestedMeters || 0),
-          "Item Status": i.status || 'Pending'
-        }));
+        return (o.items || []).map(i => {
+          // Format the roll and color output nicely
+          let rollDetails = i.subCode || '-';
+          if (i.rollColor) rollDetails += ` (${i.rollColor})`;
+
+          return { 
+            "Date": formatGreekDate(o.date), 
+            "Order ID": o.orderId,
+            "Customer": o.customer, 
+            "Overall Status": o.overallStatus || 'Pending',
+            "Notes": o.notes || '-',
+            "Fabric Code": i.fabricCode || '-', 
+            "Roll / Color": rollDetails,
+            "Meters Req": parseFloat(i.requestedMeters || 0),
+            "Item Status": i.status || 'Pending'
+          };
+        });
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(custOrdExp), "Customer_Orders");
 
