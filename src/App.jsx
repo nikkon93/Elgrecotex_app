@@ -173,9 +173,13 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
 };
 
 // --- INVOICE VIEWERS ---
-const InvoiceViewer = ({ invoice, type, onBack }) => {
+// --- INVOICE VIEWERS ---
+const InvoiceViewer = ({ invoice, type, customers = [], onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
   const pdfName = `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
+
+  // Look up the customer's phone number
+  const customerInfo = customers.find(c => c.name === (invoice.customer || invoice.supplier || invoice.company));
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
@@ -205,6 +209,7 @@ const InvoiceViewer = ({ invoice, type, onBack }) => {
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Bill To</h3>
               <p className="text-xl font-bold text-slate-800">{invoice.customer || invoice.supplier || invoice.company}</p>
+              {customerInfo?.phone && <p className="text-sm text-slate-500 mt-1">Phone: {customerInfo.phone}</p>}
               {(invoice.vatNumber || invoice.taxId) && <p className="text-sm text-slate-500 mt-1">VAT/Tax ID: {invoice.vatNumber || invoice.taxId}</p>}
             </div>
             <div className="text-right">
@@ -313,8 +318,12 @@ const SampleSlipViewer = ({ sampleLog, onBack }) => {
 };
 
 // --- NEW ORDER PDF VIEWER ---
-const OrderViewer = ({ order, onBack }) => {
+// --- NEW ORDER PDF VIEWER ---
+const OrderViewer = ({ order, customers = [], onBack }) => {
   const pdfName = `Order_Request_${order.orderId}`;
+
+  // Look up the customer's phone number
+  const customerInfo = customers.find(c => c.name === order.customer);
 
   return (
     <div className="bg-gray-100 min-h-screen p-8 animate-in fade-in flex flex-col items-center">
@@ -343,6 +352,7 @@ const OrderViewer = ({ order, onBack }) => {
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Requested By</h3>
               <p className="text-xl font-bold text-slate-800">{order.customer}</p>
+              {customerInfo?.phone && <p className="text-sm text-slate-500 mt-1">Phone: {customerInfo.phone}</p>}
               {order.notes && <p className="text-sm text-indigo-700 mt-2 bg-indigo-50 p-2 rounded inline-block">📝 {order.notes}</p>}
             </div>
             <div className="text-right">
@@ -364,9 +374,7 @@ const OrderViewer = ({ order, onBack }) => {
        <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Fabric Code</th>
        <th className="text-left py-4 px-4 font-bold border-b border-slate-300">Roll / Color</th>
        <th className="text-right py-4 px-4 font-bold border-b border-slate-300">Requested Qty</th>
-       {/* Added w-[180px] for a wider Roll ID box */}
        <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b w-[180px]">Roll ID</th>
-       {/* Added w-[80px] for smaller Meters and Weight boxes */}
        <th className="text-center py-4 px-2 font-bold border-l border-slate-300 border-b w-[80px]">Roll Meters</th>
        <th className="text-center py-4 px-2 font-bold border-l border-slate-300 border-b w-[80px]">Weight</th>
        <th className="text-center py-4 px-4 font-bold border-l-2 border-slate-300 border-b">Item Status</th>
@@ -374,13 +382,16 @@ const OrderViewer = ({ order, onBack }) => {
 </thead>
                <tbody className="divide-y divide-slate-200">
                   {(order.items || []).map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="py-4 px-4 font-bold text-slate-700 bg-white">{item.fabricCode}</td>
-                        <td className="py-4 px-4 text-slate-600 bg-white">
-                            <span className="font-mono text-blue-600 text-xs mr-2">{item.subCode || item.rollCode || '-'}</span>
+                      <tr key={idx} className={item.isPreorder ? "bg-amber-50/40" : "bg-white"}>
+                        <td className="py-4 px-4 font-bold text-slate-700">
+                          {item.fabricCode}
+                          {item.isPreorder && <span className="block text-[10px] text-amber-600 uppercase mt-1">Pre-order</span>}
+                        </td>
+                        <td className="py-4 px-4 text-slate-600">
+                            <span className={`font-mono text-xs mr-2 ${item.isPreorder ? 'text-amber-600 font-bold bg-amber-100 px-1 rounded' : 'text-blue-600'}`}>{item.subCode || item.rollCode || '-'}</span>
                             {item.rollColor && <span>({item.rollColor})</span>}
                         </td>
-                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800 bg-white">{item.requestedMeters}m</td>
+                        <td className="py-4 px-4 text-right font-mono font-bold text-slate-800">{item.requestedMeters}m</td>
                         
                         {/* Empty cells for manual warehouse entry */}
                         <td className="py-4 px-4 border-l-2 border-slate-300 bg-slate-50/50"></td>
@@ -1118,7 +1129,7 @@ const SalesInvoices = ({ orders = [], customers = [], fabrics = [], dateRangeSta
   const selectedFabric = fabrics.find(f => String(f.mainCode) === String(item.fabricCode));
   const fileInputRef = React.useRef(null);
 
-  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" onBack={() => setViewInvoice(null)} />;
+  if (viewInvoice) return <InvoiceViewer invoice={viewInvoice} type="Sales" customers={customers} onBack={() => setViewInvoice(null)} />;
 
   const handleNewInvoice = () => { 
       setNewOrder({ 
@@ -1605,7 +1616,7 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
   const [isPreorderMode, setIsPreorderMode] = useState(false);
   const [customItem, setCustomItem] = useState({ fabricCode: '', details: '', requestedMeters: '' });
 
-  if (viewOrder) return <OrderViewer order={viewOrder} onBack={() => setViewOrder(null)} />;
+  if (viewOrder) return <OrderViewer order={viewOrder} customers={customers} onBack={() => setViewOrder(null)} />;
 
   // --- REAL-TIME AVAILABILITY CALCULATOR ---
   const getRollAvailability = (rollId) => {
