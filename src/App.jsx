@@ -1639,7 +1639,8 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
     orders.forEach(o => {
       if (o.overallStatus !== 'Completed' && o.id !== editingId) {
         (o.items || []).forEach(i => {
-          if (i.rollId === rollId && i.status !== 'Unavailable') {
+          // EXPLICITLY ignore Fulfilled and Unavailable items
+          if (i.rollId === rollId && i.status !== 'Unavailable' && i.status !== 'Fulfilled') {
             reserved += parseFloat(i.requestedMeters || 0);
           }
         });
@@ -1701,6 +1702,14 @@ const CustomerOrders = ({ orders, customers, fabrics, onBack }) => {
     const nextStatus = statuses[(currentStatusIdx + 1) % statuses.length];
     
     currentItems[idx].status = nextStatus;
+
+    // Automatically release the physical stock reservation if the item is fulfilled
+    if (nextStatus === 'Fulfilled') {
+      currentItems[idx].rollId = ''; 
+    } 
+    // If it gets changed back to Pending, you might want to re-reserve it later, 
+    // but for now, wiping the rollId completely solves the immediate warehouse conflict.
+
     setNewOrder({ ...newOrder, items: currentItems });
   };
 
