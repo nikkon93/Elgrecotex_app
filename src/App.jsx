@@ -353,6 +353,7 @@ const OrderViewer = ({ order, customers = [], onBack }) => {
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Requested By</h3>
               <p className="text-xl font-bold text-slate-800">{order.customer}</p>
               {customerInfo?.phone && <p className="text-sm text-slate-500 mt-1">Phone: {customerInfo.phone}</p>}
+              {customerInfo?.vatNumber && <p className="text-sm text-slate-500 mt-1">VAT: {customerInfo.vatNumber}</p>}
               {order.notes && <p className="text-sm text-indigo-700 mt-2 bg-indigo-50 p-2 rounded inline-block">📝 {order.notes}</p>}
             </div>
             <div className="text-right">
