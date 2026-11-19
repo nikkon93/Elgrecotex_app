@@ -176,7 +176,18 @@ const calculateTotalWarehouseValue = (fabrics = [], purchases = []) => {
 // --- INVOICE VIEWERS ---
 const InvoiceViewer = ({ invoice, type, customers = [], onBack }) => {
   const fmt = (val) => (parseFloat(val) || 0).toFixed(2);
-  const pdfName = `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
+  
+  // Format today's date as "19 Nov 2026"
+  const todayFormatted = new Date().toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+
+  const clientName = invoice.customer || invoice.supplier || invoice.company || 'Client';
+  const pdfName = type === 'Sales'
+    ? `Order_Confirmed_${clientName}_${todayFormatted}`
+    : `${type}_Invoice_${invoice.invoiceNo || 'Draft'}`;
 
   // Look up the customer's phone number
   const customerInfo = customers.find(c => c.name === (invoice.customer || invoice.supplier || invoice.company));
@@ -198,7 +209,9 @@ const InvoiceViewer = ({ invoice, type, customers = [], onBack }) => {
               <p className="text-slate-500 font-medium mt-1">Premium Textiles</p>
             </div>
             <div className="text-right">
-              <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">{type} INVOICE</h2>
+              <h2 className="text-3xl font-bold text-slate-800 uppercase tracking-widest">
+                {type === 'Sales' ? 'ORDER CONFIRMED' : `${type} INVOICE`}
+              </h2>
               <p className="text-slate-500 font-mono mt-1 text-lg">#{invoice.invoiceNo}</p>
               {invoice.orderId && <p className="text-slate-400 text-xs mt-1 font-mono">Ref: {invoice.orderId}</p>}
               <p className="text-slate-500 text-sm mt-1">{formatGreekDate(invoice.date)}</p>
